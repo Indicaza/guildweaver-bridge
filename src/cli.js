@@ -2,6 +2,7 @@
 
 import process from "node:process";
 
+import { ensureAddonCurrent } from "./addonManager.js";
 import {
   backgroundStatus,
   installBackground,
@@ -30,8 +31,8 @@ Usage:
   node src/cli.js background-status [--config path]
 
 Commands:
-  once                 Pair if needed, then sync unsent Guildweaver revisions.
-  watch                Pair if needed, then keep watching SavedVariables.
+  once                 Update Guildweaver, pair if needed, then sync once.
+  watch                Keep Guildweaver updated and watch SavedVariables.
   pair                 Connect this PC to Holdfast and exit.
   install-background   Start Guildweaver silently at Windows login.
   uninstall-background Stop it and remove Windows startup registration.
@@ -39,6 +40,25 @@ Commands:
 
 A config file is optional. Standard WoW installs and Holdfast production are discovered automatically.
 `);
+}
+
+function describeAddonUpdate(result) {
+  if (!result) return null;
+
+  if (result.status === "updated") {
+    return `Guildweaver addon updated to ${result.releaseVersion || result.commit || "latest"}.`;
+  }
+  if (result.status === "developer-updated") {
+    return `Guildweaver developer checkout fast-forwarded to ${String(result.commit || "latest").slice(0, 8)}.`;
+  }
+  if (result.status === "developer-dirty") {
+    return "Guildweaver developer checkout has local changes; automatic update skipped.";
+  }
+  if (result.status === "release-unavailable") {
+    return `Guildweaver ${result.channel} release is not published yet.`;
+  }
+
+  return null;
 }
 
 async function main() {
@@ -110,6 +130,24 @@ async function main() {
     }
   }
 
+  let updateInFlight = false;
+  const updateAddon = async () => {
+    if (updateInFlight) return;
+    updateInFlight = true;
+
+    try {
+      const result = await ensureAddonCurrent(config);
+      const message = describeAddonUpdate(result);
+      if (message) console.log(message);
+    } catch (error) {
+      console.error(`Guildweaver addon update: ${error.message}`);
+    } finally {
+      updateInFlight = false;
+    }
+  };
+
+  await updateAddon();
+
   let credentials = null;
   let runtimeConfig = null;
 
@@ -169,11 +207,13 @@ async function main() {
 
   console.log(`Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms.`);
 
-  const timer = setInterval(run, config.pollIntervalMs);
+  const syncTimer = setInterval(run, config.pollIntervalMs);
+  const updateTimer = setInterval(updateAddon, config.addonUpdateIntervalMs);
 
   await new Promise((resolve) => {
     const stop = () => {
-      clearInterval(timer);
+      clearInterval(syncTimer);
+      clearInterval(updateTimer);
       releaseInstanceLock?.();
       resolve();
     };
