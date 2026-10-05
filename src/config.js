@@ -27,6 +27,23 @@ function appDataDirectory() {
   );
 }
 
+function defaultBackgroundLauncherPath(dataDirectory) {
+  return path.join(
+    dataDirectory,
+    process.platform === "win32" ? "background.vbs" : "background.sh",
+  );
+}
+
+function defaultLaunchAgentPath() {
+  if (process.platform !== "darwin") return null;
+  return path.join(
+    os.homedir(),
+    "Library",
+    "LaunchAgents",
+    "com.guildweaver.bridge.plist",
+  );
+}
+
 export function loadConfig(configPath = "guildweaver-bridge.json") {
   const resolved = path.resolve(configPath);
   const parsed = fs.existsSync(resolved)
@@ -37,6 +54,9 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
   const bridgeUpdateChannel = String(
     parsed.bridgeUpdateChannel || addonUpdateChannel,
   ).toLowerCase();
+  const configuredLaunchAgentPath = parsed.launchAgentPath
+    ? path.resolve(parsed.launchAgentPath)
+    : defaultLaunchAgentPath();
   const config = {
     holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
     wowRoot: parsed.wowRoot ? path.resolve(parsed.wowRoot) : null,
@@ -67,8 +87,9 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
       parsed.logPath || path.join(dataDirectory, "bridge.log"),
     ),
     backgroundLauncherPath: path.resolve(
-      parsed.backgroundLauncherPath || path.join(dataDirectory, "background.vbs"),
+      parsed.backgroundLauncherPath || defaultBackgroundLauncherPath(dataDirectory),
     ),
+    launchAgentPath: configuredLaunchAgentPath,
     configPath: fs.existsSync(resolved) ? resolved : null,
   };
 
