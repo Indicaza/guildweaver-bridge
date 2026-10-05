@@ -18,11 +18,33 @@ function appRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 }
 
+function runtimeBinaryName(platform = process.platform) {
+  return platform === "win32" ? "node.exe" : "node";
+}
+
+function releaseAssetNames(platform = process.platform, arch = process.arch) {
+  if (platform === "win32" && arch === "x64") {
+    return {
+      archive: "GuildweaverBridge.zip",
+      checksum: "GuildweaverBridge.zip.sha256",
+    };
+  }
+
+  if (platform === "darwin" && (arch === "arm64" || arch === "x64")) {
+    return {
+      archive: `GuildweaverBridge-macos-${arch}.zip`,
+      checksum: `GuildweaverBridge-macos-${arch}.zip.sha256`,
+    };
+  }
+
+  throw new Error(`Unsupported Guildweaver Bridge package platform: ${platform}-${arch}`);
+}
+
 export function packagedRuntime() {
   const applicationRoot = appRoot();
   const packageRoot = path.dirname(applicationRoot);
   const releasePath = path.join(applicationRoot, "release.json");
-  const nodePath = path.join(packageRoot, "node.exe");
+  const nodePath = path.join(packageRoot, runtimeBinaryName());
 
   if (!fs.existsSync(releasePath) || !fs.existsSync(nodePath)) {
     return null;
@@ -42,12 +64,17 @@ export function packagedRuntime() {
   }
 }
 
-export function bridgeReleaseAssetUrls(channel) {
+export function bridgeReleaseAssetUrls(
+  channel,
+  platform = process.platform,
+  arch = process.arch,
+) {
   const base = `${RELEASE_DOWNLOAD_ROOT}/${encodeURIComponent(channel)}`;
+  const assets = releaseAssetNames(platform, arch);
   return {
     manifest: `${base}/release.json`,
-    archive: `${base}/GuildweaverBridge.zip`,
-    checksum: `${base}/GuildweaverBridge.zip.sha256`,
+    archive: `${base}/${assets.archive}`,
+    checksum: `${base}/${assets.checksum}`,
   };
 }
 
@@ -99,12 +126,16 @@ function extractArchiveDefault(archivePath, destinationPath) {
 }
 
 function validatePackageRoot(packageRoot, expectedCommit = null) {
-  const nodePath = path.join(packageRoot, "node.exe");
+  const nodePath = path.join(packageRoot, runtimeBinaryName());
   const cliPath = path.join(packageRoot, "app", "src", "cli.js");
   const releasePath = path.join(packageRoot, "app", "release.json");
 
   if (!fs.existsSync(nodePath) || !fs.existsSync(cliPath) || !fs.existsSync(releasePath)) {
     throw new Error("Guildweaver Bridge package is incomplete");
+  }
+
+  if (process.platform === "darwin") {
+    fs.chmodSync(nodePath, 0o755);
   }
 
   const release = JSON.parse(fs.readFileSync(releasePath, "utf8"));
@@ -138,8 +169,8 @@ function replaceDirectory(targetPath, stagedPath) {
 }
 
 export function installPackagedBridge(config, { packageRoot = path.dirname(process.execPath) } = {}) {
-  if (process.platform !== "win32") {
-    throw new Error("Packaged Guildweaver Bridge installation is currently Windows-only");
+  if (process.platform !== "win32" && process.platform !== "darwin") {
+    throw new Error("Packaged Guildweaver Bridge installation supports Windows and macOS only");
   }
 
   const source = validatePackageRoot(packageRoot);
@@ -206,7 +237,7 @@ export async function ensurePackagedBridgeCurrent(
 
   fs.mkdirSync(config.dataDirectory, { recursive: true });
   const downloadRoot = fs.mkdtempSync(path.join(config.dataDirectory, "bridge-download-"));
-  const archivePath = path.join(downloadRoot, "GuildweaverBridge.zip");
+  const archivePath = path.join(downloadRoot, path.basename(new URL(assets.archive).pathname));
   const extractionRoot = path.join(downloadRoot, "extracted");
   const nextPath = `${config.installDirectory}.next`;
 
