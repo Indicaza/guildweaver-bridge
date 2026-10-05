@@ -1,7 +1,12 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ensureAddonCurrent,
   releaseAssetUrls,
   updateDeveloperCheckout,
 } from "../src/addonManager.js";
@@ -71,4 +76,65 @@ test("clean developer main fast-forwards to origin main", () => {
       ["rev-parse", "HEAD"],
     ],
   );
+});
+
+test("normal install verifies checksum and installs staged release", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-addon-test-"));
+  const addonPath = path.join(root, "Interface", "AddOns", "Guildweaver");
+  const dataDirectory = path.join(root, "data");
+  const manifest = {
+    schemaVersion: 1,
+    addonVersion: "0.2.0-alpha.1",
+    releaseVersion: "0.2.0-alpha.1+edge.12345678",
+    channel: "edge",
+    commit: "1234567890abcdef",
+    savedVariablesSchema: 2,
+    bridgeProtocol: 1,
+  };
+  const archive = Buffer.from("fake-guildweaver-archive");
+  const checksum = crypto.createHash("sha256").update(archive).digest("hex");
+  const urls = releaseAssetUrls("edge");
+  const fetchImpl = async (url) => {
+    if (url === urls.manifest) {
+      return new Response(JSON.stringify(manifest), { status: 200 });
+    }
+    if (url === urls.archive) {
+      return new Response(archive, { status: 200 });
+    }
+    if (url === urls.checksum) {
+      return new Response(`${checksum}\n`, { status: 200 });
+    }
+    return new Response("not found", { status: 404 });
+  };
+  const extractArchive = (archivePath, destinationPath) => {
+    assert.equal(fs.readFileSync(archivePath, "utf8"), archive.toString("utf8"));
+    const staged = path.join(destinationPath, "Guildweaver");
+    fs.mkdirSync(staged, { recursive: true });
+    fs.writeFileSync(path.join(staged, "Guildweaver.toc"), "## Interface: 16001\n");
+    fs.writeFileSync(
+      path.join(staged, "release.json"),
+      `${JSON.stringify(manifest)}\n`,
+    );
+  };
+
+  try {
+    const result = await ensureAddonCurrent(
+      {
+        addonPath,
+        addonUpdateChannel: "edge",
+        dataDirectory,
+      },
+      { fetchImpl, extractArchive },
+    );
+
+    assert.equal(result.status, "updated");
+    assert.equal(result.commit, manifest.commit);
+    assert.ok(fs.existsSync(path.join(addonPath, "Guildweaver.toc")));
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(addonPath, "release.json"), "utf8")).commit,
+      manifest.commit,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
