@@ -25,7 +25,7 @@ Click “Connect Guildweaver”
         ↓
 Bridge starts silently with Windows
         ↓
-Addon updates + character sync happen automatically
+Bridge + addon updates + character sync happen automatically
 ```
 
 The device credential is bound by Holdfast to the Discord member who approved it. The bridge does not choose a member ID and cannot use its credential to sync characters into another member's profile.
@@ -62,9 +62,23 @@ If `Interface\\AddOns\\Guildweaver` resolves to a git checkout or junction, the 
 1. checks whether the worktree is clean,
 2. runs `git fetch origin main`,
 3. fast-forwards to `origin/main` only,
-4. leaves a dirty checkout untouched.
+4. leaves a dirty checkout or non-main branch untouched.
 
 This keeps the local junction development flow safe while normal users never need Git.
+
+## Bridge self-update
+
+Source-based background installs also keep the bridge itself current. Once per minute the hidden bridge checks its own git checkout.
+
+A bridge self-update only runs when:
+
+- the checkout is clean,
+- the checked-out branch is `main`,
+- `origin/main` is a fast-forward from the current commit.
+
+After a successful update, the running process schedules a hidden delayed relaunch, releases its single-instance lock, exits, and comes back on the new commit. Dirty worktrees and feature branches are never modified.
+
+This is the development self-update path. A future packaged Windows build will use release artifacts instead of requiring Git.
 
 ## Requirements
 
@@ -123,7 +137,8 @@ A config file is only needed for non-standard WoW installs, development websites
   "wowRoot": "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_",
   "pollIntervalMs": 3000,
   "addonUpdateChannel": "edge",
-  "addonUpdateIntervalMs": 900000
+  "addonUpdateIntervalMs": 900000,
+  "bridgeUpdateIntervalMs": 60000
 }
 ```
 
@@ -143,7 +158,7 @@ npm run once
 
 The background process scans the local Guildweaver SavedVariables file and sends only revisions that Holdfast has not already accepted. When nothing has changed, it does not send sync requests.
 
-Addon update checks run on their own slower interval and are independent of the SavedVariables polling interval.
+Addon update checks and bridge self-update checks run on their own slower intervals and are independent of the SavedVariables polling interval.
 
 WoW currently flushes SavedVariables on logout and `/reload`, so those events remain the handoff point from the addon to the companion bridge.
 
@@ -164,7 +179,7 @@ Guildweaver Bridge stores local runtime data in the OS application-data director
 - `bridge.lock` — single-instance guard for the watcher
 - `bridge.log` — background diagnostics, rotated at approximately 1 MB
 - `background.vbs` — hidden Windows launcher registered for the current user
-- temporary addon update staging directories while an update is being verified
+- temporary restart/update files while an update is being applied
 
 Deleting the credential causes the next run to pair again.
 
@@ -185,11 +200,12 @@ Character ingest derives the member from that device credential. A bridge reques
 
 Addon updates are accepted only after the downloaded ZIP matches the SHA-256 checksum published with the release and the staged package contains matching release metadata.
 
+Bridge source self-update is restricted to a clean `main` checkout and uses only a fast-forward merge from `origin/main`.
+
 The device credential is scoped to Guildweaver bridge APIs; Holdfast rank, permissions, Rep, Marks, and other authoritative guild state remain website-owned.
 
 ## Next
 
 1. Package the bridge as a Windows executable so normal users do not need Node or Git.
-2. Add bridge self-update + rollback.
-3. Add a website device-management page for viewing/revoking connected PCs.
-4. Use the same paired bridge for website-to-addon quest and notification sync.
+2. Add website device management for viewing/revoking connected PCs.
+3. Use the same paired bridge for website-to-addon quest and notification sync.
