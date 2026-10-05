@@ -1,6 +1,6 @@
 {
   "name": "guildweaver-bridge",
-  "version": "0.4.0-alpha.1",
+  "version": "0.5.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "Local companion bridge between the Guildweaver WoW addon and guild websites.",
@@ -15,6 +15,6 @@
     "background:uninstall": "node src/cli.js uninstall-background",
     "background:status": "node src/cli.js background-status",
     "test": "node --test",
-    "check": "node --check src/addonManager.js && node --check src/background.js && node --check src/cli.js && node --check src/config.js && node --check src/discovery.js && node --check src/instanceLock.js && node --check src/logger.js && node --check src/pairing.js && node --check src/savedVariables.js && node --check src/sync.js"
+    "check": "node --check src/addonManager.js && node --check src/background.js && node --check src/cli.js && node --check src/config.js && node --check src/discovery.js && node --check src/instanceLock.js && node --check src/logger.js && node --check src/pairing.js && node --check src/savedVariables.js && node --check src/sourceUpdater.js && node --check src/sync.js"
   }
 }
