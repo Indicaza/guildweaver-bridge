@@ -51,6 +51,9 @@ function describeAddonUpdate(result) {
   if (result.status === "developer-updated") {
     return `Guildweaver developer checkout fast-forwarded to ${String(result.commit || "latest").slice(0, 8)}.`;
   }
+  if (result.status === "developer-branch") {
+    return `Guildweaver developer checkout is on ${result.branch}; automatic update only touches main.`;
+  }
   if (result.status === "developer-dirty") {
     return "Guildweaver developer checkout has local changes; automatic update skipped.";
   }
