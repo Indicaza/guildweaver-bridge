@@ -55,6 +55,33 @@ Bridge + addon update themselves automatically
 
 The current alpha packages are not yet Apple-notarized. Depending on Gatekeeper settings, the first launch may require using **Open** from Finder's context menu or approving the app in Privacy & Security. After installation, normal background operation does not require repeated approval.
 
+### Linux
+
+Choose the package for the machine:
+
+- `GuildweaverBridge-linux-x64.zip` — normal Intel/AMD desktop Linux
+- `GuildweaverBridge-linux-arm64.zip` — ARM64 Linux
+
+Then:
+
+```text
+Download + extract the matching ZIP
+        ↓
+Run “Install Guildweaver Bridge.sh”
+        ↓
+Bridge copies itself to the per-user XDG state directory
+        ↓
+Bridge finds WoW in common Wine/Lutris/Bottles/Proton locations + installs Guildweaver
+        ↓
+Pair with Holdfast once in the browser
+        ↓
+XDG autostart launches the Bridge when the desktop session starts
+        ↓
+Bridge + addon update themselves automatically
+```
+
+The Linux package is self-contained and ships its own Node runtime. A source install still requires Node.js and Git.
+
 After installation the downloaded archive can be deleted.
 
 The device credential is bound by Holdfast to the Discord member who approved it. The bridge does not choose a member ID and cannot use its credential to sync characters into another member's profile.
@@ -83,12 +110,13 @@ Packaged Bridge installs live in a stable per-user application-data path and inc
 
 - Windows: `%LOCALAPPDATA%\Guildweaver\app`
 - macOS: `~/Library/Application Support/Guildweaver/app`
+- Linux: `${XDG_STATE_HOME:-~/.local/state}/guildweaver/app`
 
-The background Bridge checks its Bridge release channel periodically. When a newer build exists it downloads and verifies the platform-specific package, stages it beside the current install, exits cleanly, swaps versions outside the running process, and restarts through the OS startup manager.
+The background Bridge checks its Bridge release channel periodically. When a newer build exists it downloads and verifies the platform-specific package, stages it beside the current install, exits cleanly, swaps versions outside the running process, and restarts through the OS startup integration.
 
-Windows uses the per-user Run registry entry. macOS uses `launchd` with `~/Library/LaunchAgents/com.guildweaver.bridge.plist`.
+Windows uses the per-user Run registry entry. macOS uses `launchd` with `~/Library/LaunchAgents/com.guildweaver.bridge.plist`. Linux uses the freedesktop/XDG autostart directory (`$XDG_CONFIG_HOME/autostart`, falling back to `~/.config/autostart`).
 
-The macOS updater explicitly unloads the LaunchAgent before replacing the running package so `KeepAlive` cannot race the swap. If replacement or re-bootstrap fails, it restores the previous package.
+macOS unloads the LaunchAgent before replacing the running package so `KeepAlive` cannot race the swap. Linux waits for the running process to exit, swaps the staged package, verifies that the replacement starts and creates its instance lock, and rolls back to the previous package if startup fails.
 
 ## Developer checkout behavior
 
@@ -124,9 +152,13 @@ Every release publishes:
 - `GuildweaverBridge-macos-x64.zip.sha256`
 - `GuildweaverBridge-macos-arm64.zip` — Apple Silicon Mac
 - `GuildweaverBridge-macos-arm64.zip.sha256`
+- `GuildweaverBridge-linux-x64.zip` — Linux x64
+- `GuildweaverBridge-linux-x64.zip.sha256`
+- `GuildweaverBridge-linux-arm64.zip` — Linux ARM64
+- `GuildweaverBridge-linux-arm64.zip.sha256`
 - `release.json`
 
-Each package contains its own Node runtime plus the Bridge application. Mac release CI downloads the official Node runtime for each architecture and verifies Node's published SHA-256 before packaging it.
+Each package contains its own Node runtime plus the Bridge application. macOS and Linux release CI download the official Node runtime for each architecture and verify Node's published SHA-256 before packaging it.
 
 ## World of Warcraft discovery
 
@@ -139,7 +171,19 @@ macOS checks:
 - mounted external volumes under `/Volumes/*/World of Warcraft`
 - `/Volumes/*/Applications/World of Warcraft`
 
+Linux checks common native launcher and compatibility-layer layouts, including:
+
+- `$WINEPREFIX`
+- `~/.wine`
+- `~/Games` and common Lutris-style prefixes
+- Bottles native and Flatpak data directories
+- Steam Proton `compatdata/*/pfx` directories
+
+Inside Wine/Proton prefixes, both `Program Files` and `Program Files (x86)` WoW locations are checked.
+
 The standard WoW variants (`_classic_beta_`, `_classic_`, `_anniversary_`, `_retail_`, PTR/beta variants) are supported by the same discovery logic.
+
+For unusual installations on any OS, set `wowRoot` explicitly in the optional config.
 
 ## Source development
 
@@ -167,7 +211,7 @@ npm run check
 npm test
 ```
 
-CI executes the Bridge syntax/tests on Linux, Windows, and macOS. Release CI additionally builds Windows, Intel Mac, and Apple Silicon Mac packages.
+CI executes the Bridge syntax/tests on Linux, Windows, and macOS. Release CI additionally builds Windows x64, macOS Intel/Apple Silicon, and Linux x64/ARM64 packages.
 
 ## Background commands
 
@@ -211,6 +255,7 @@ Guildweaver Bridge stores runtime data under the OS application-data directory:
 
 - Windows: `%LOCALAPPDATA%\Guildweaver`
 - macOS: `~/Library/Application Support/Guildweaver`
+- Linux: `${XDG_STATE_HOME:-~/.local/state}/guildweaver`
 
 Important files/directories include:
 
@@ -221,6 +266,7 @@ Important files/directories include:
 - `bridge.log` — background diagnostics
 - Windows: `background.vbs`
 - macOS: `background.sh` plus `~/Library/LaunchAgents/com.guildweaver.bridge.plist`
+- Linux: `background.sh` plus `$XDG_CONFIG_HOME/autostart/guildweaver-bridge.desktop` (or `~/.config/autostart/guildweaver-bridge.desktop`)
 - temporary staged update/restart files while updates are applied
 
 Deleting the credential causes the next run to pair again.
