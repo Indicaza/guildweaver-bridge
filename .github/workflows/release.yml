@@ -219,8 +219,100 @@ jobs:
             dist/GuildweaverBridge-macos-${{ matrix.arch }}.zip.sha256
           retention-days: 7
 
+  linux-package:
+    needs: metadata
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Package Linux bridge
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          BRIDGE_VERSION: ${{ needs.metadata.outputs.bridge_version }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.release_version }}
+          CHANNEL: ${{ needs.metadata.outputs.channel }}
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          root="$PWD/dist/linux-${ARCH}/GuildweaverBridge"
+          app="$root/app"
+          mkdir -p "$app"
+
+          node_version="$(node -p 'process.version')"
+          node_archive="node-${node_version}-linux-${ARCH}.tar.xz"
+          node_root="https://nodejs.org/dist/${node_version}"
+          curl -fsSLO "${node_root}/${node_archive}"
+          curl -fsSLO "${node_root}/SHASUMS256.txt"
+          grep " ${node_archive}$" SHASUMS256.txt > node-checksum.txt
+          sha256sum -c node-checksum.txt
+          tar -xJf "$node_archive"
+          cp "node-${node_version}-linux-${ARCH}/bin/node" "$root/node"
+          chmod 755 "$root/node"
+
+          cp -R src "$app/src"
+          cp package.json "$app/package.json"
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const release = {
+            schemaVersion: 1,
+            bridgeVersion: process.env.BRIDGE_VERSION,
+            releaseVersion: process.env.RELEASE_VERSION,
+            channel: process.env.CHANNEL,
+            commit: process.env.GITHUB_SHA,
+            bridgeProtocol: 2,
+            platform: 'linux',
+            arch: process.env.ARCH,
+          };
+          const target = path.join(process.cwd(), 'dist', `linux-${process.env.ARCH}`, 'GuildweaverBridge', 'app', 'release.json');
+          fs.writeFileSync(target, JSON.stringify(release, null, 2) + '\n');
+          NODE
+
+          cat > "$root/Install Guildweaver Bridge.sh" <<'INSTALLER'
+          #!/bin/sh
+          set -eu
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          chmod 755 "$HERE/node"
+          "$HERE/node" "$HERE/app/src/cli.js" install-package
+          printf '\nGuildweaver Bridge installation complete.\n'
+          INSTALLER
+          chmod 755 "$root/Install Guildweaver Bridge.sh"
+
+          node "$app/src/cli.js" help
+          file "$root/node"
+          if [[ "$ARCH" == "x64" ]]; then
+            "$root/node" "$app/src/cli.js" help
+          fi
+
+          (
+            cd "$PWD/dist/linux-${ARCH}"
+            zip -qry "../GuildweaverBridge-linux-${ARCH}.zip" GuildweaverBridge
+          )
+          sha256sum "dist/GuildweaverBridge-linux-${ARCH}.zip" | awk '{print $1}' > "dist/GuildweaverBridge-linux-${ARCH}.zip.sha256"
+
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v4
+        with:
+          name: guildweaver-bridge-linux-${{ matrix.arch }}
+          path: |
+            dist/GuildweaverBridge-linux-${{ matrix.arch }}.zip
+            dist/GuildweaverBridge-linux-${{ matrix.arch }}.zip.sha256
+          retention-days: 7
+
   release:
-    needs: [metadata, windows-package, macos-package]
+    needs: [metadata, windows-package, macos-package, linux-package]
     runs-on: ubuntu-latest
     steps:
       - name: Download package artifacts
@@ -267,6 +359,14 @@ jobs:
                 artifact: 'GuildweaverBridge-macos-arm64.zip',
                 checksum: 'GuildweaverBridge-macos-arm64.zip.sha256',
               },
+              'linux-x64': {
+                artifact: 'GuildweaverBridge-linux-x64.zip',
+                checksum: 'GuildweaverBridge-linux-x64.zip.sha256',
+              },
+              'linux-arm64': {
+                artifact: 'GuildweaverBridge-linux-arm64.zip',
+                checksum: 'GuildweaverBridge-linux-arm64.zip.sha256',
+              },
             },
           };
           fs.writeFileSync('dist/release.json', JSON.stringify(manifest, null, 2) + '\n');
@@ -278,6 +378,10 @@ jobs:
           test -s dist/GuildweaverBridge-macos-x64.zip.sha256
           test -s dist/GuildweaverBridge-macos-arm64.zip
           test -s dist/GuildweaverBridge-macos-arm64.zip.sha256
+          test -s dist/GuildweaverBridge-linux-x64.zip
+          test -s dist/GuildweaverBridge-linux-x64.zip.sha256
+          test -s dist/GuildweaverBridge-linux-arm64.zip
+          test -s dist/GuildweaverBridge-linux-arm64.zip.sha256
           test -s dist/release.json
 
       - name: Upload combined release artifact
@@ -302,6 +406,10 @@ jobs:
             dist/GuildweaverBridge-macos-x64.zip.sha256 \
             dist/GuildweaverBridge-macos-arm64.zip \
             dist/GuildweaverBridge-macos-arm64.zip.sha256 \
+            dist/GuildweaverBridge-linux-x64.zip \
+            dist/GuildweaverBridge-linux-x64.zip.sha256 \
+            dist/GuildweaverBridge-linux-arm64.zip \
+            dist/GuildweaverBridge-linux-arm64.zip.sha256 \
             dist/release.json \
             --target "$GITHUB_SHA" \
             --title "${{ needs.metadata.outputs.title }}" \
@@ -323,6 +431,10 @@ jobs:
             dist/GuildweaverBridge-macos-x64.zip.sha256
             dist/GuildweaverBridge-macos-arm64.zip
             dist/GuildweaverBridge-macos-arm64.zip.sha256
+            dist/GuildweaverBridge-linux-x64.zip
+            dist/GuildweaverBridge-linux-x64.zip.sha256
+            dist/GuildweaverBridge-linux-arm64.zip
+            dist/GuildweaverBridge-linux-arm64.zip.sha256
             dist/release.json
             --title "${{ needs.metadata.outputs.title }}"
             --generate-notes
@@ -347,6 +459,10 @@ jobs:
             dist/GuildweaverBridge-macos-x64.zip.sha256
             dist/GuildweaverBridge-macos-arm64.zip
             dist/GuildweaverBridge-macos-arm64.zip.sha256
+            dist/GuildweaverBridge-linux-x64.zip
+            dist/GuildweaverBridge-linux-x64.zip.sha256
+            dist/GuildweaverBridge-linux-arm64.zip
+            dist/GuildweaverBridge-linux-arm64.zip.sha256
             dist/release.json
             --target "$GITHUB_SHA"
             --title "Guildweaver Bridge ${channel} — ${{ needs.metadata.outputs.release_version }}"
