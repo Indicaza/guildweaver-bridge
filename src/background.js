@@ -156,17 +156,27 @@ export function macPackageReplacementLauncherSource({
   pid,
   installDirectory,
   nextPath,
+  serviceDomain,
   serviceTarget,
+  launchAgentPath,
   scriptPath,
 }) {
   const backupPath = `${installDirectory}.backup`;
   return `#!/bin/sh
 set -u
+launchctl bootout ${shellQuote(serviceTarget)} >/dev/null 2>&1 || true
 while kill -0 ${Number(pid)} 2>/dev/null; do sleep 0.25; done
 rm -rf ${shellQuote(backupPath)}
 if [ -d ${shellQuote(installDirectory)} ]; then mv ${shellQuote(installDirectory)} ${shellQuote(backupPath)}; fi
 if ! mv ${shellQuote(nextPath)} ${shellQuote(installDirectory)}; then
   if [ -d ${shellQuote(backupPath)} ]; then mv ${shellQuote(backupPath)} ${shellQuote(installDirectory)}; fi
+  launchctl bootstrap ${shellQuote(serviceDomain)} ${shellQuote(launchAgentPath)} >/dev/null 2>&1 || true
+  exit 1
+fi
+if ! launchctl bootstrap ${shellQuote(serviceDomain)} ${shellQuote(launchAgentPath)} >/dev/null 2>&1; then
+  rm -rf ${shellQuote(installDirectory)}
+  if [ -d ${shellQuote(backupPath)} ]; then mv ${shellQuote(backupPath)} ${shellQuote(installDirectory)}; fi
+  launchctl bootstrap ${shellQuote(serviceDomain)} ${shellQuote(launchAgentPath)} >/dev/null 2>&1 || true
   exit 1
 fi
 launchctl kickstart -k ${shellQuote(serviceTarget)} >/dev/null 2>&1 || true
@@ -379,7 +389,9 @@ export function schedulePackageReplacement(
       pid,
       installDirectory: config.installDirectory,
       nextPath,
+      serviceDomain: macDomain(),
       serviceTarget: macServiceTarget(),
+      launchAgentPath: config.launchAgentPath,
       scriptPath,
     }),
     { encoding: "utf8", mode: 0o755 },
