@@ -6,12 +6,14 @@ import { ensureAddonCurrent } from "./addonManager.js";
 import {
   backgroundStatus,
   installBackground,
+  scheduleBackgroundRestart,
   uninstallBackground,
 } from "./background.js";
 import { loadConfig } from "./config.js";
 import { acquireInstanceLock } from "./instanceLock.js";
 import { enableFileLogging } from "./logger.js";
 import { clearCredentials, ensurePaired } from "./pairing.js";
+import { updateBridgeSource } from "./sourceUpdater.js";
 import { syncOnce } from "./sync.js";
 
 function optionValue(args, name) {
@@ -133,10 +135,40 @@ async function main() {
     }
   }
 
-  let updateInFlight = false;
+  const releaseLock = () => {
+    releaseInstanceLock?.();
+    releaseInstanceLock = null;
+  };
+
+  const checkBridgeUpdate = () => {
+    if (!backgroundMode) return null;
+
+    try {
+      return updateBridgeSource();
+    } catch (error) {
+      console.error(`Guildweaver Bridge self-update: ${error.message}`);
+      return null;
+    }
+  };
+
+  const restartIntoUpdatedBridge = (result) => {
+    console.log(
+      `Guildweaver Bridge updated ${String(result.previousCommit || "").slice(0, 8)} -> ${String(result.commit || "").slice(0, 8)}. Restarting...`,
+    );
+    scheduleBackgroundRestart(config);
+    releaseLock();
+  };
+
+  const startupBridgeUpdate = checkBridgeUpdate();
+  if (startupBridgeUpdate?.status === "updated") {
+    restartIntoUpdatedBridge(startupBridgeUpdate);
+    return;
+  }
+
+  let addonUpdateInFlight = false;
   const updateAddon = async () => {
-    if (updateInFlight) return;
-    updateInFlight = true;
+    if (addonUpdateInFlight) return;
+    addonUpdateInFlight = true;
 
     try {
       const result = await ensureAddonCurrent(config);
@@ -145,7 +177,7 @@ async function main() {
     } catch (error) {
       console.error(`Guildweaver addon update: ${error.message}`);
     } finally {
-      updateInFlight = false;
+      addonUpdateInFlight = false;
     }
   };
 
@@ -210,16 +242,36 @@ async function main() {
 
   console.log(`Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms.`);
 
-  const syncTimer = setInterval(run, config.pollIntervalMs);
-  const updateTimer = setInterval(updateAddon, config.addonUpdateIntervalMs);
-
   await new Promise((resolve) => {
+    let bridgeUpdateInFlight = false;
+    const syncTimer = setInterval(run, config.pollIntervalMs);
+    const addonUpdateTimer = setInterval(updateAddon, config.addonUpdateIntervalMs);
+
     const stop = () => {
       clearInterval(syncTimer);
-      clearInterval(updateTimer);
-      releaseInstanceLock?.();
+      clearInterval(addonUpdateTimer);
+      clearInterval(bridgeUpdateTimer);
+      releaseLock();
       resolve();
     };
+
+    const bridgeUpdateTimer = setInterval(() => {
+      if (bridgeUpdateInFlight) return;
+      bridgeUpdateInFlight = true;
+
+      try {
+        const result = checkBridgeUpdate();
+        if (result?.status === "updated") {
+          clearInterval(syncTimer);
+          clearInterval(addonUpdateTimer);
+          clearInterval(bridgeUpdateTimer);
+          restartIntoUpdatedBridge(result);
+          resolve();
+        }
+      } finally {
+        bridgeUpdateInFlight = false;
+      }
+    }, config.bridgeUpdateIntervalMs);
 
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
