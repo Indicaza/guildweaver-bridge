@@ -8,6 +8,8 @@ The WoW addon never performs HTTP requests. It writes versioned outbound data to
 
 Normal users do not install Node, Git, the addon, tokens, Discord IDs, or update commands.
 
+### Windows
+
 ```text
 Download GuildweaverBridge.zip
         ↓
@@ -17,22 +19,43 @@ Double-click “Install Guildweaver Bridge.cmd”
         ↓
 Bridge copies itself to Local AppData
         ↓
-Bridge finds WoW automatically
+Bridge finds WoW + installs Guildweaver
         ↓
-Bridge installs Guildweaver automatically
-        ↓
-Browser opens Holdfast once
-        ↓
-Sign in with Discord if needed
-        ↓
-Click “Connect Guildweaver”
+Pair with Holdfast once in the browser
         ↓
 Bridge starts silently with Windows
         ↓
 Bridge + addon update themselves automatically
 ```
 
-After installation the downloaded ZIP can be deleted.
+### macOS
+
+Choose the package for the Mac:
+
+- `GuildweaverBridge-macos-arm64.zip` — Apple Silicon (M-series)
+- `GuildweaverBridge-macos-x64.zip` — Intel Mac
+
+Then:
+
+```text
+Download + extract the matching ZIP
+        ↓
+Open “Install Guildweaver Bridge.command”
+        ↓
+Bridge copies itself to ~/Library/Application Support/Guildweaver
+        ↓
+Bridge finds WoW + installs Guildweaver
+        ↓
+Pair with Holdfast once in the browser
+        ↓
+LaunchAgent starts the Bridge at login
+        ↓
+Bridge + addon update themselves automatically
+```
+
+The current alpha packages are not yet Apple-notarized. Depending on Gatekeeper settings, the first launch may require using **Open** from Finder's context menu or approving the app in Privacy & Security. After installation, normal background operation does not require repeated approval.
+
+After installation the downloaded archive can be deleted.
 
 The device credential is bound by Holdfast to the Discord member who approved it. The bridge does not choose a member ID and cannot use its credential to sync characters into another member's profile.
 
@@ -56,19 +79,16 @@ A user never needs to download the addon separately.
 
 ### Bridge
 
-Packaged Bridge installs live under `%LOCALAPPDATA%\Guildweaver\app` and include their own Node runtime. The background Bridge checks its Bridge release channel periodically.
+Packaged Bridge installs live in a stable per-user application-data path and include their own Node runtime:
 
-When a newer build exists it:
+- Windows: `%LOCALAPPDATA%\Guildweaver\app`
+- macOS: `~/Library/Application Support/Guildweaver/app`
 
-1. downloads the new Bridge package,
-2. verifies the published SHA-256 checksum,
-3. validates the staged package and commit metadata,
-4. stages it beside the current install,
-5. exits cleanly,
-6. lets a tiny Windows handoff script swap the package,
-7. relaunches the background Bridge.
+The background Bridge checks its Bridge release channel periodically. When a newer build exists it downloads and verifies the platform-specific package, stages it beside the current install, exits cleanly, swaps versions outside the running process, and restarts through the OS startup manager.
 
-The background startup entry points at the stable AppData installation path, so users do not need to reinstall after updates.
+Windows uses the per-user Run registry entry. macOS uses `launchd` with `~/Library/LaunchAgents/com.guildweaver.bridge.plist`.
+
+The macOS updater explicitly unloads the LaunchAgent before replacing the running package so `KeepAlive` cannot race the swap. If replacement or re-bootstrap fails, it restores the previous package.
 
 ## Developer checkout behavior
 
@@ -94,25 +114,32 @@ Website / Discord
 
 WoW owns observed game facts such as character level, gear, professions, inventory, and game-side progress. Holdfast remains authoritative for guild-owned state such as assignments, Rep, Marks, rewards, ranks, billets, permissions, and notifications.
 
-## Packaged Windows release
+## Release packages
 
-Every Bridge release contains:
+Every release publishes:
 
-```text
-GuildweaverBridge/
-├── node.exe
-├── Install Guildweaver Bridge.cmd
-└── app/
-    ├── package.json
-    ├── release.json
-    └── src/
-```
-
-The package has no external runtime dependency. The release pipeline smoke-runs the bundled runtime and publishes:
-
-- `GuildweaverBridge.zip`
+- `GuildweaverBridge.zip` — Windows x64
 - `GuildweaverBridge.zip.sha256`
+- `GuildweaverBridge-macos-x64.zip` — Intel Mac
+- `GuildweaverBridge-macos-x64.zip.sha256`
+- `GuildweaverBridge-macos-arm64.zip` — Apple Silicon Mac
+- `GuildweaverBridge-macos-arm64.zip.sha256`
 - `release.json`
+
+Each package contains its own Node runtime plus the Bridge application. Mac release CI downloads the official Node runtime for each architecture and verifies Node's published SHA-256 before packaging it.
+
+## World of Warcraft discovery
+
+Windows checks the normal Program Files locations and common WoW roots.
+
+macOS checks:
+
+- `/Applications/World of Warcraft`
+- `~/Applications/World of Warcraft`
+- mounted external volumes under `/Volumes/*/World of Warcraft`
+- `/Volumes/*/Applications/World of Warcraft`
+
+The standard WoW variants (`_classic_beta_`, `_classic_`, `_anniversary_`, `_retail_`, PTR/beta variants) are supported by the same discovery logic.
 
 ## Source development
 
@@ -121,7 +148,7 @@ Requirements:
 - Node.js 22+
 - Git
 
-```powershell
+```bash
 git clone git@github.com:Indicaza/guildweaver-bridge.git
 cd guildweaver-bridge
 npm run background:install
@@ -129,28 +156,30 @@ npm run background:install
 
 Foreground development:
 
-```powershell
+```bash
 npm start
 ```
 
 Validation:
 
-```powershell
+```bash
 npm run check
 npm test
 ```
+
+CI executes the Bridge syntax/tests on Linux, Windows, and macOS. Release CI additionally builds Windows, Intel Mac, and Apple Silicon Mac packages.
 
 ## Background commands
 
 Check a source/development install:
 
-```powershell
+```bash
 npm run background:status
 ```
 
 Remove it:
 
-```powershell
+```bash
 npm run background:uninstall
 ```
 
@@ -163,7 +192,7 @@ A config file is only needed for non-standard WoW installs, development websites
 ```json
 {
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
-  "wowRoot": "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_",
+  "wowRoot": "/Applications/World of Warcraft/_classic_beta_",
   "pollIntervalMs": 3000,
   "addonUpdateChannel": "edge",
   "bridgeUpdateChannel": "edge",
@@ -178,7 +207,10 @@ There are intentionally no member IDs or authentication secrets in the config.
 
 ## Local data
 
-Guildweaver Bridge stores runtime data under the OS application-data directory. On Windows this is `%LOCALAPPDATA%\Guildweaver`.
+Guildweaver Bridge stores runtime data under the OS application-data directory:
+
+- Windows: `%LOCALAPPDATA%\Guildweaver`
+- macOS: `~/Library/Application Support/Guildweaver`
 
 Important files/directories include:
 
@@ -187,7 +219,8 @@ Important files/directories include:
 - `bridge-state.json` — synchronization acknowledgements
 - `bridge.lock` — single-instance guard
 - `bridge.log` — background diagnostics
-- `background.vbs` — stable hidden Windows startup launcher
+- Windows: `background.vbs`
+- macOS: `background.sh` plus `~/Library/LaunchAgents/com.guildweaver.bridge.plist`
 - temporary staged update/restart files while updates are applied
 
 Deleting the credential causes the next run to pair again.
