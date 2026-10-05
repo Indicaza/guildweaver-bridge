@@ -84,11 +84,12 @@ jobs:
           }
           $release | ConvertTo-Json | Set-Content (Join-Path $app 'release.json') -Encoding utf8
 
-          @"
-          @echo off
-          "%~dp0node.exe" "%~dp0app\src\cli.js" install-package
-          if errorlevel 1 pause
-          "@.Trim() | Set-Content (Join-Path $root 'Install Guildweaver Bridge.cmd') -Encoding ascii
+          $installer = @(
+            '@echo off',
+            '"%~dp0node.exe" "%~dp0app\src\cli.js" install-package',
+            'if errorlevel 1 pause'
+          )
+          $installer | Set-Content (Join-Path $root 'Install Guildweaver Bridge.cmd') -Encoding ascii
 
           & (Join-Path $root 'node.exe') (Join-Path $app 'src/cli.js') help
 
