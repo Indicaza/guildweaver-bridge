@@ -12,9 +12,15 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
-
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      bridge_version: ${{ steps.meta.outputs.bridge_version }}
+      channel: ${{ steps.meta.outputs.channel }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      release_version: ${{ steps.meta.outputs.release_version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      title: ${{ steps.meta.outputs.title }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,43 +32,56 @@ jobs:
 
       - name: Determine release metadata
         id: meta
-        shell: pwsh
+        shell: bash
         run: |
-          $bridgeVersion = node -p "require('./package.json').version"
-          $shortSha = $env:GITHUB_SHA.Substring(0, 8)
+          set -euo pipefail
+          bridge_version="$(node -p "require('./package.json').version")"
+          short_sha="${GITHUB_SHA::8}"
 
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $releaseTag = $env:GITHUB_REF_NAME
-            $releaseVersion = $env:GITHUB_REF_NAME.TrimStart('v')
-            $title = "Guildweaver Bridge $releaseVersion"
-            if ($releaseVersion -match '-(alpha|beta|rc)') {
-              $channel = 'beta'
-              $prerelease = 'true'
-            } else {
-              $channel = 'stable'
-              $prerelease = 'false'
-            }
-          } else {
-            $channel = 'edge'
-            $releaseTag = 'edge'
-            $releaseVersion = "$bridgeVersion+edge.$shortSha"
-            $prerelease = 'true'
-            $title = "Guildweaver Bridge edge $shortSha"
-          }
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            release_tag="${GITHUB_REF_NAME}"
+            release_version="${GITHUB_REF_NAME#v}"
+            title="Guildweaver Bridge ${release_version}"
+            if [[ "${release_version}" == *-alpha* || "${release_version}" == *-beta* || "${release_version}" == *-rc* ]]; then
+              channel="beta"
+              prerelease="true"
+            else
+              channel="stable"
+              prerelease="false"
+            fi
+          else
+            channel="edge"
+            release_tag="edge"
+            release_version="${bridge_version}+edge.${short_sha}"
+            prerelease="true"
+            title="Guildweaver Bridge edge ${short_sha}"
+          fi
 
-          "bridge_version=$bridgeVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "channel=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "release_tag=$releaseTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "release_version=$releaseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "title=$title" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          echo "bridge_version=${bridge_version}" >> "$GITHUB_OUTPUT"
+          echo "channel=${channel}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_version=${release_version}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          echo "title=${title}" >> "$GITHUB_OUTPUT"
+
+  windows-package:
+    needs: metadata
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Package Windows bridge
         shell: pwsh
         env:
-          BRIDGE_VERSION: ${{ steps.meta.outputs.bridge_version }}
-          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
-          CHANNEL: ${{ steps.meta.outputs.channel }}
+          BRIDGE_VERSION: ${{ needs.metadata.outputs.bridge_version }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.release_version }}
+          CHANNEL: ${{ needs.metadata.outputs.channel }}
         run: |
           $ErrorActionPreference = 'Stop'
           Remove-Item dist -Recurse -Force -ErrorAction SilentlyContinue
@@ -81,6 +100,8 @@ jobs:
             channel = $env:CHANNEL
             commit = $env:GITHUB_SHA
             bridgeProtocol = 2
+            platform = 'win32'
+            arch = 'x64'
           }
           $release | ConvertTo-Json | Set-Content (Join-Path $app 'release.json') -Encoding utf8
 
@@ -97,74 +118,239 @@ jobs:
           $hash = (Get-FileHash 'dist/GuildweaverBridge.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
           $hash | Set-Content 'dist/GuildweaverBridge.zip.sha256' -Encoding ascii
 
-          $manifest = [ordered]@{
-            schemaVersion = 1
-            bridgeVersion = $env:BRIDGE_VERSION
-            releaseVersion = $env:RELEASE_VERSION
-            channel = $env:CHANNEL
-            commit = $env:GITHUB_SHA
-            bridgeProtocol = 2
-            artifact = 'GuildweaverBridge.zip'
-            checksum = 'GuildweaverBridge.zip.sha256'
-          }
-          $manifest | ConvertTo-Json | Set-Content 'dist/release.json' -Encoding utf8
-
-          if (-not (Test-Path 'dist/GuildweaverBridge.zip')) { throw 'Bridge archive was not created' }
-          if (-not (Test-Path 'dist/GuildweaverBridge.zip.sha256')) { throw 'Bridge checksum was not created' }
-          if (-not (Test-Path 'dist/release.json')) { throw 'Bridge manifest was not created' }
-
-      - name: Upload package artifact
+      - name: Upload Windows package
         uses: actions/upload-artifact@v4
         with:
           name: guildweaver-bridge-windows
           path: |
             dist/GuildweaverBridge.zip
             dist/GuildweaverBridge.zip.sha256
-            dist/release.json
+          retention-days: 7
+
+  macos-package:
+    needs: metadata
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Package macOS bridge
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          BRIDGE_VERSION: ${{ needs.metadata.outputs.bridge_version }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.release_version }}
+          CHANNEL: ${{ needs.metadata.outputs.channel }}
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          root="$PWD/dist/macos-${ARCH}/GuildweaverBridge"
+          app="$root/app"
+          mkdir -p "$app"
+
+          node_version="$(node -p 'process.version')"
+          node_archive="node-${node_version}-darwin-${ARCH}.tar.gz"
+          node_root="https://nodejs.org/dist/${node_version}"
+          curl -fsSLO "${node_root}/${node_archive}"
+          curl -fsSLO "${node_root}/SHASUMS256.txt"
+          grep " ${node_archive}$" SHASUMS256.txt > node-checksum.txt
+          shasum -a 256 -c node-checksum.txt
+          tar -xzf "$node_archive"
+          cp "node-${node_version}-darwin-${ARCH}/bin/node" "$root/node"
+          chmod 755 "$root/node"
+
+          cp -R src "$app/src"
+          cp package.json "$app/package.json"
+
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const release = {
+            schemaVersion: 1,
+            bridgeVersion: process.env.BRIDGE_VERSION,
+            releaseVersion: process.env.RELEASE_VERSION,
+            channel: process.env.CHANNEL,
+            commit: process.env.GITHUB_SHA,
+            bridgeProtocol: 2,
+            platform: 'darwin',
+            arch: process.env.ARCH,
+          };
+          const target = path.join(process.cwd(), 'dist', `macos-${process.env.ARCH}`, 'GuildweaverBridge', 'app', 'release.json');
+          fs.writeFileSync(target, JSON.stringify(release, null, 2) + '\n');
+          NODE
+
+          cat > "$root/Install Guildweaver Bridge.command" <<'INSTALLER'
+          #!/bin/sh
+          set -eu
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          "$HERE/node" "$HERE/app/src/cli.js" install-package
+          printf '\nGuildweaver Bridge installation complete.\n'
+          INSTALLER
+          chmod 755 "$root/Install Guildweaver Bridge.command"
+
+          node "$app/src/cli.js" help
+          file "$root/node"
+          host_arch="$(uname -m)"
+          if { [[ "$host_arch" == "arm64" && "$ARCH" == "arm64" ]] || [[ "$host_arch" == "x86_64" && "$ARCH" == "x64" ]]; }; then
+            "$root/node" "$app/src/cli.js" help
+          fi
+
+          (
+            cd "$PWD/dist/macos-${ARCH}"
+            /usr/bin/zip -qry "../GuildweaverBridge-macos-${ARCH}.zip" GuildweaverBridge
+          )
+          shasum -a 256 "dist/GuildweaverBridge-macos-${ARCH}.zip" | awk '{print $1}' > "dist/GuildweaverBridge-macos-${ARCH}.zip.sha256"
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: guildweaver-bridge-macos-${{ matrix.arch }}
+          path: |
+            dist/GuildweaverBridge-macos-${{ matrix.arch }}.zip
+            dist/GuildweaverBridge-macos-${{ matrix.arch }}.zip.sha256
+          retention-days: 7
+
+  release:
+    needs: [metadata, windows-package, macos-package]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: guildweaver-bridge-*
+          path: dist
+          merge-multiple: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build release manifest
+        shell: bash
+        env:
+          BRIDGE_VERSION: ${{ needs.metadata.outputs.bridge_version }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.release_version }}
+          CHANNEL: ${{ needs.metadata.outputs.channel }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const manifest = {
+            schemaVersion: 1,
+            bridgeVersion: process.env.BRIDGE_VERSION,
+            releaseVersion: process.env.RELEASE_VERSION,
+            channel: process.env.CHANNEL,
+            commit: process.env.GITHUB_SHA,
+            bridgeProtocol: 2,
+            artifact: 'GuildweaverBridge.zip',
+            checksum: 'GuildweaverBridge.zip.sha256',
+            packages: {
+              'win32-x64': {
+                artifact: 'GuildweaverBridge.zip',
+                checksum: 'GuildweaverBridge.zip.sha256',
+              },
+              'darwin-x64': {
+                artifact: 'GuildweaverBridge-macos-x64.zip',
+                checksum: 'GuildweaverBridge-macos-x64.zip.sha256',
+              },
+              'darwin-arm64': {
+                artifact: 'GuildweaverBridge-macos-arm64.zip',
+                checksum: 'GuildweaverBridge-macos-arm64.zip.sha256',
+              },
+            },
+          };
+          fs.writeFileSync('dist/release.json', JSON.stringify(manifest, null, 2) + '\n');
+          NODE
+
+          test -s dist/GuildweaverBridge.zip
+          test -s dist/GuildweaverBridge.zip.sha256
+          test -s dist/GuildweaverBridge-macos-x64.zip
+          test -s dist/GuildweaverBridge-macos-x64.zip.sha256
+          test -s dist/GuildweaverBridge-macos-arm64.zip
+          test -s dist/GuildweaverBridge-macos-arm64.zip.sha256
+          test -s dist/release.json
+
+      - name: Upload combined release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: guildweaver-bridge-release
+          path: dist/
           retention-days: 7
 
       - name: Replace edge release
-        if: github.event_name == 'push' && steps.meta.outputs.channel == 'edge'
+        if: github.event_name == 'push' && needs.metadata.outputs.channel == 'edge'
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+        shell: bash
         run: |
-          gh release delete edge --cleanup-tag --yes 2>$null
-          gh release create edge dist/GuildweaverBridge.zip dist/GuildweaverBridge.zip.sha256 dist/release.json --target $env:GITHUB_SHA --title "${{ steps.meta.outputs.title }}" --notes "Automated edge build from $env:GITHUB_SHA." --prerelease
+          set -euo pipefail
+          gh release delete edge --cleanup-tag --yes >/dev/null 2>&1 || true
+          gh release create edge \
+            dist/GuildweaverBridge.zip \
+            dist/GuildweaverBridge.zip.sha256 \
+            dist/GuildweaverBridge-macos-x64.zip \
+            dist/GuildweaverBridge-macos-x64.zip.sha256 \
+            dist/GuildweaverBridge-macos-arm64.zip \
+            dist/GuildweaverBridge-macos-arm64.zip.sha256 \
+            dist/release.json \
+            --target "$GITHUB_SHA" \
+            --title "${{ needs.metadata.outputs.title }}" \
+            --notes "Automated edge build from ${GITHUB_SHA}." \
+            --prerelease
 
       - name: Publish tagged release
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+        shell: bash
         run: |
-          $args = @(
-            '${{ steps.meta.outputs.release_tag }}',
-            'dist/GuildweaverBridge.zip',
-            'dist/GuildweaverBridge.zip.sha256',
-            'dist/release.json',
-            '--title', '${{ steps.meta.outputs.title }}',
-            '--generate-notes'
+          set -euo pipefail
+          args=(
+            "${{ needs.metadata.outputs.release_tag }}"
+            dist/GuildweaverBridge.zip
+            dist/GuildweaverBridge.zip.sha256
+            dist/GuildweaverBridge-macos-x64.zip
+            dist/GuildweaverBridge-macos-x64.zip.sha256
+            dist/GuildweaverBridge-macos-arm64.zip
+            dist/GuildweaverBridge-macos-arm64.zip.sha256
+            dist/release.json
+            --title "${{ needs.metadata.outputs.title }}"
+            --generate-notes
           )
-          if ('${{ steps.meta.outputs.prerelease }}' -eq 'true') { $args += '--prerelease' }
-          gh release create @args
+          if [[ "${{ needs.metadata.outputs.prerelease }}" == "true" ]]; then args+=(--prerelease); fi
+          gh release create "${args[@]}"
 
       - name: Replace beta or stable channel release
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+        shell: bash
         run: |
-          $channel = '${{ steps.meta.outputs.channel }}'
-          gh release delete $channel --cleanup-tag --yes 2>$null
-          $args = @(
-            $channel,
-            'dist/GuildweaverBridge.zip',
-            'dist/GuildweaverBridge.zip.sha256',
-            'dist/release.json',
-            '--target', $env:GITHUB_SHA,
-            '--title', "Guildweaver Bridge $channel — ${{ steps.meta.outputs.release_version }}",
-            '--notes', "Channel pointer for ${{ steps.meta.outputs.release_tag }}."
+          set -euo pipefail
+          channel="${{ needs.metadata.outputs.channel }}"
+          gh release delete "$channel" --cleanup-tag --yes >/dev/null 2>&1 || true
+          args=(
+            "$channel"
+            dist/GuildweaverBridge.zip
+            dist/GuildweaverBridge.zip.sha256
+            dist/GuildweaverBridge-macos-x64.zip
+            dist/GuildweaverBridge-macos-x64.zip.sha256
+            dist/GuildweaverBridge-macos-arm64.zip
+            dist/GuildweaverBridge-macos-arm64.zip.sha256
+            dist/release.json
+            --target "$GITHUB_SHA"
+            --title "Guildweaver Bridge ${channel} — ${{ needs.metadata.outputs.release_version }}"
+            --notes "Channel pointer for ${{ needs.metadata.outputs.release_tag }}."
           )
-          if ('${{ steps.meta.outputs.prerelease }}' -eq 'true') { $args += '--prerelease' }
-          gh release create @args
+          if [[ "${{ needs.metadata.outputs.prerelease }}" == "true" ]]; then args+=(--prerelease); fi
+          gh release create "${args[@]}"

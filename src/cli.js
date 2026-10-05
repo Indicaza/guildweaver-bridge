@@ -41,9 +41,9 @@ Usage:
 Commands:
   once                 Update Guildweaver, pair if needed, then sync once.
   watch                Keep Guildweaver updated and watch SavedVariables.
-  pair                 Connect this PC to Holdfast and exit.
-  install-background   Install/update the addon and run the bridge at Windows login.
-  uninstall-background Stop it and remove Windows startup registration.
+  pair                 Connect this computer to Holdfast and exit.
+  install-background   Install/update the addon and run the bridge at login.
+  uninstall-background Stop it and remove startup registration.
   background-status    Show whether the background bridge is installed/running.
 
 A config file is optional. Standard WoW installs and Holdfast production are discovered automatically.
@@ -109,13 +109,13 @@ async function main() {
     }
     const result = spawnSync(installed.nodePath, childArgs, {
       stdio: "inherit",
-      windowsHide: false,
+      windowsHide: process.platform === "win32",
     });
     if (result.error) throw result.error;
     if (result.status !== 0) {
       throw new Error(`Installed Guildweaver Bridge exited with code ${result.status}`);
     }
-    console.log("Guildweaver Bridge installation complete. You can delete the downloaded ZIP.");
+    console.log("Guildweaver Bridge installation complete. You can delete the downloaded archive.");
     return;
   }
 
@@ -146,7 +146,7 @@ async function main() {
     const installed = installBackground(config);
     console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     console.log("Guildweaver addon is installed and automatic updates are enabled.");
-    console.log("Background sync installed and started. It will launch automatically when you sign into Windows.");
+    console.log("Background sync installed and started. It will launch automatically when you sign in.");
     console.log(`Log: ${installed.logPath}`);
     return;
   }
