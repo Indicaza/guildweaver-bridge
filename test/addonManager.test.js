@@ -2,37 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  releaseApiUrl,
-  selectReleaseAssets,
+  releaseAssetUrls,
   updateDeveloperCheckout,
 } from "../src/addonManager.js";
 
-test("release channel maps to the Guildweaver GitHub release endpoint", () => {
-  assert.equal(
-    releaseApiUrl("edge"),
-    "https://api.github.com/repos/Indicaza/guildweaver/releases/tags/edge",
-  );
-});
-
-test("release assets require manifest archive and checksum", () => {
-  const assets = selectReleaseAssets({
-    assets: [
-      { name: "release.json", browser_download_url: "manifest" },
-      { name: "Guildweaver.zip", browser_download_url: "archive" },
-      { name: "Guildweaver.zip.sha256", browser_download_url: "checksum" },
-    ],
+test("release channel maps to deterministic Guildweaver download URLs", () => {
+  assert.deepEqual(releaseAssetUrls("edge"), {
+    manifest:
+      "https://github.com/Indicaza/guildweaver/releases/download/edge/release.json",
+    archive:
+      "https://github.com/Indicaza/guildweaver/releases/download/edge/Guildweaver.zip",
+    checksum:
+      "https://github.com/Indicaza/guildweaver/releases/download/edge/Guildweaver.zip.sha256",
   });
-
-  assert.deepEqual(assets, {
-    manifest: "manifest",
-    archive: "archive",
-    checksum: "checksum",
-  });
-
-  assert.throws(
-    () => selectReleaseAssets({ assets: [] }),
-    /missing required update assets/,
-  );
 });
 
 test("developer feature branch is never modified", () => {
