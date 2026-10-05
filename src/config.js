@@ -34,6 +34,9 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     : {};
   const dataDirectory = appDataDirectory();
   const addonUpdateChannel = String(parsed.addonUpdateChannel || "edge").toLowerCase();
+  const bridgeUpdateChannel = String(
+    parsed.bridgeUpdateChannel || addonUpdateChannel,
+  ).toLowerCase();
   const config = {
     holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
     wowRoot: parsed.wowRoot ? path.resolve(parsed.wowRoot) : null,
@@ -42,11 +45,15 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
       : null,
     addonPath: parsed.addonPath ? path.resolve(parsed.addonPath) : null,
     addonUpdateChannel,
+    bridgeUpdateChannel,
     addonUpdateIntervalMs: Number(parsed.addonUpdateIntervalMs) || 15 * 60 * 1000,
     bridgeUpdateIntervalMs: Number(parsed.bridgeUpdateIntervalMs) || 60 * 1000,
     questSyncIntervalMs: Number(parsed.questSyncIntervalMs) || 15 * 1000,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 3000,
     dataDirectory,
+    installDirectory: path.resolve(
+      parsed.installDirectory || path.join(dataDirectory, "app"),
+    ),
     statePath: path.resolve(
       parsed.statePath || path.join(dataDirectory, "bridge-state.json"),
     ),
@@ -87,6 +94,10 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
 
   if (!UPDATE_CHANNELS.has(config.addonUpdateChannel)) {
     throw new Error("addonUpdateChannel must be edge, beta, or stable");
+  }
+
+  if (!UPDATE_CHANNELS.has(config.bridgeUpdateChannel)) {
+    throw new Error("bridgeUpdateChannel must be edge, beta, or stable");
   }
 
   return config;
