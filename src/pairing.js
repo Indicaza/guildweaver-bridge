@@ -57,6 +57,14 @@ export function readCredentials(credentialsPath) {
   return value;
 }
 
+export function clearCredentials(credentialsPath) {
+  try {
+    fs.rmSync(credentialsPath, { force: true });
+  } catch {
+    // A missing/unremovable credential will surface naturally on the next run.
+  }
+}
+
 export function openBrowser(url, spawnImpl = spawn) {
   let child;
 
