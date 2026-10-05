@@ -51,6 +51,7 @@ test("posts each outbound revision once with the paired device credential", asyn
     savedVariablesPath,
     wowRoot: null,
     pollIntervalMs: 3000,
+    questSyncIntervalMs: Number.MAX_SAFE_INTEGER,
     statePath,
   };
 
@@ -91,6 +92,7 @@ test("does not acknowledge a revision when the website rejects the device", asyn
     savedVariablesPath,
     wowRoot: null,
     pollIntervalMs: 3000,
+    questSyncIntervalMs: Number.MAX_SAFE_INTEGER,
     statePath,
   };
 
