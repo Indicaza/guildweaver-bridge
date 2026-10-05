@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   backgroundLauncherSource,
+  packageReplacementLauncherSource,
   restartLauncherSource,
 } from "../src/background.js";
 
@@ -32,4 +33,21 @@ test("restart launcher waits for the old bridge to exit before relaunching", () 
   assert.match(source, /background\.vbs/);
   assert.match(source, /DeleteFile/);
   assert.match(source, /restart\.vbs/);
+});
+
+test("packaged update waits for the current PID then swaps and relaunches", () => {
+  const source = packageReplacementLauncherSource({
+    pid: 4242,
+    installDirectory: "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\app",
+    nextPath: "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\app.next",
+    backgroundLauncherPath: "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\background.vbs",
+    scriptPath: "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\replace-bridge.vbs",
+  });
+
+  assert.match(source, /ProcessId = 4242/);
+  assert.match(source, /app\.backup/);
+  assert.match(source, /MoveFolder/);
+  assert.match(source, /app\.next/);
+  assert.match(source, /background\.vbs/);
+  assert.match(source, /replace-bridge\.vbs/);
 });

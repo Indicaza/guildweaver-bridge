@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 import { ensureAddonCurrent } from "./addonManager.js";
@@ -7,11 +8,16 @@ import {
   backgroundStatus,
   installBackground,
   scheduleBackgroundRestart,
+  schedulePackageReplacement,
   uninstallBackground,
 } from "./background.js";
 import { loadConfig } from "./config.js";
 import { acquireInstanceLock } from "./instanceLock.js";
 import { enableFileLogging } from "./logger.js";
+import {
+  ensurePackagedBridgeCurrent,
+  installPackagedBridge,
+} from "./packageUpdater.js";
 import { clearCredentials, ensurePaired } from "./pairing.js";
 import { updateBridgeSource } from "./sourceUpdater.js";
 import { syncOnce } from "./sync.js";
@@ -36,7 +42,7 @@ Commands:
   once                 Update Guildweaver, pair if needed, then sync once.
   watch                Keep Guildweaver updated and watch SavedVariables.
   pair                 Connect this PC to Holdfast and exit.
-  install-background   Start Guildweaver silently at Windows login.
+  install-background   Install/update the addon and run the bridge at Windows login.
   uninstall-background Stop it and remove Windows startup registration.
   background-status    Show whether the background bridge is installed/running.
 
@@ -80,6 +86,7 @@ async function main() {
     "once",
     "watch",
     "pair",
+    "install-package",
     "install-background",
     "uninstall-background",
     "background-status",
@@ -93,6 +100,24 @@ async function main() {
 
   const configPath = optionValue(args, "--config") || "guildweaver-bridge.json";
   const config = loadConfig(configPath);
+
+  if (command === "install-package") {
+    const installed = installPackagedBridge(config);
+    const childArgs = [installed.cliPath, "install-background"];
+    if (config.configPath) {
+      childArgs.push("--config", config.configPath);
+    }
+    const result = spawnSync(installed.nodePath, childArgs, {
+      stdio: "inherit",
+      windowsHide: false,
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw new Error(`Installed Guildweaver Bridge exited with code ${result.status}`);
+    }
+    console.log("Guildweaver Bridge installation complete. You can delete the downloaded ZIP.");
+    return;
+  }
 
   if (backgroundMode) {
     enableFileLogging(config.logPath);
@@ -115,8 +140,12 @@ async function main() {
 
   if (command === "install-background") {
     const credentials = await ensurePaired(config);
+    const addonResult = await ensureAddonCurrent(config);
+    const addonMessage = describeAddonUpdate(addonResult);
+    if (addonMessage) console.log(addonMessage);
     const installed = installBackground(config);
     console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
+    console.log("Guildweaver addon is installed and automatic updates are enabled.");
     console.log("Background sync installed and started. It will launch automatically when you sign into Windows.");
     console.log(`Log: ${installed.logPath}`);
     return;
@@ -140,11 +169,15 @@ async function main() {
     releaseInstanceLock = null;
   };
 
-  const checkBridgeUpdate = () => {
+  const checkBridgeUpdate = async () => {
     if (!backgroundMode) return null;
 
     try {
-      return updateBridgeSource();
+      const sourceResult = updateBridgeSource();
+      if (sourceResult.status !== "not-source-checkout") {
+        return sourceResult;
+      }
+      return await ensurePackagedBridgeCurrent(config);
     } catch (error) {
       console.error(`Guildweaver Bridge self-update: ${error.message}`);
       return null;
@@ -152,6 +185,15 @@ async function main() {
   };
 
   const restartIntoUpdatedBridge = (result) => {
+    if (result.status === "package-update-staged") {
+      console.log(
+        `Guildweaver Bridge package updated ${String(result.previousCommit || "").slice(0, 8)} -> ${String(result.commit || "").slice(0, 8)}. Restarting...`,
+      );
+      schedulePackageReplacement(config, result.nextPath);
+      releaseLock();
+      return;
+    }
+
     console.log(
       `Guildweaver Bridge updated ${String(result.previousCommit || "").slice(0, 8)} -> ${String(result.commit || "").slice(0, 8)}. Restarting...`,
     );
@@ -159,8 +201,11 @@ async function main() {
     releaseLock();
   };
 
-  const startupBridgeUpdate = checkBridgeUpdate();
-  if (startupBridgeUpdate?.status === "updated") {
+  const startupBridgeUpdate = await checkBridgeUpdate();
+  if (
+    startupBridgeUpdate?.status === "updated" ||
+    startupBridgeUpdate?.status === "package-update-staged"
+  ) {
     restartIntoUpdatedBridge(startupBridgeUpdate);
     return;
   }
@@ -255,13 +300,16 @@ async function main() {
       resolve();
     };
 
-    const bridgeUpdateTimer = setInterval(() => {
+    const bridgeUpdateTimer = setInterval(async () => {
       if (bridgeUpdateInFlight) return;
       bridgeUpdateInFlight = true;
 
       try {
-        const result = checkBridgeUpdate();
-        if (result?.status === "updated") {
+        const result = await checkBridgeUpdate();
+        if (
+          result?.status === "updated" ||
+          result?.status === "package-update-staged"
+        ) {
           clearInterval(syncTimer);
           clearInterval(addonUpdateTimer);
           clearInterval(bridgeUpdateTimer);
