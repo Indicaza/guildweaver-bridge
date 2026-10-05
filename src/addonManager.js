@@ -5,7 +5,8 @@ import path from "node:path";
 
 import { findAddonPath } from "./discovery.js";
 
-const RELEASE_REPOSITORY = "Indicaza/guildweaver";
+const RELEASE_DOWNLOAD_ROOT =
+  "https://github.com/Indicaza/guildweaver/releases/download";
 const SUPPORTED_BRIDGE_PROTOCOL = 1;
 
 function normalizePath(value) {
@@ -44,23 +45,13 @@ async function responseJson(response) {
   }
 }
 
-export function releaseApiUrl(channel) {
-  return `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases/tags/${channel}`;
-}
-
-export function selectReleaseAssets(release) {
-  const assets = new Map(
-    (release?.assets || []).map((asset) => [asset.name, asset.browser_download_url]),
-  );
-  const manifest = assets.get("release.json");
-  const archive = assets.get("Guildweaver.zip");
-  const checksum = assets.get("Guildweaver.zip.sha256");
-
-  if (!manifest || !archive || !checksum) {
-    throw new Error("Guildweaver release is missing required update assets");
-  }
-
-  return { manifest, archive, checksum };
+export function releaseAssetUrls(channel) {
+  const base = `${RELEASE_DOWNLOAD_ROOT}/${encodeURIComponent(channel)}`;
+  return {
+    manifest: `${base}/release.json`,
+    archive: `${base}/Guildweaver.zip`,
+    checksum: `${base}/Guildweaver.zip.sha256`,
+  };
 }
 
 function developerCheckout(addonPath) {
@@ -163,21 +154,6 @@ function replaceAddonDirectory(addonPath, stagedAddonPath) {
   }
 }
 
-async function fetchRelease(channel, fetchImpl) {
-  const response = await fetchImpl(releaseApiUrl(channel), {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "Guildweaver-Bridge",
-    },
-  });
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  return responseJson(response);
-}
-
 export async function ensureAddonCurrent(
   config,
   {
@@ -193,14 +169,14 @@ export async function ensureAddonCurrent(
     return updateDeveloperCheckout(checkout, { execImpl });
   }
 
-  const release = await fetchRelease(config.addonUpdateChannel, fetchImpl);
+  const assets = releaseAssetUrls(config.addonUpdateChannel);
+  const manifestResponse = await fetchImpl(assets.manifest);
 
-  if (!release) {
+  if (manifestResponse.status === 404) {
     return { status: "release-unavailable", channel: config.addonUpdateChannel };
   }
 
-  const assets = selectReleaseAssets(release);
-  const manifest = await responseJson(await fetchImpl(assets.manifest));
+  const manifest = await responseJson(manifestResponse);
 
   if (Number(manifest.schemaVersion) !== 1) {
     throw new Error("Unsupported Guildweaver release manifest schema");
@@ -223,8 +199,14 @@ export async function ensureAddonCurrent(
   }
 
   fs.mkdirSync(config.dataDirectory, { recursive: true });
-  const stagingRoot = fs.mkdtempSync(path.join(config.dataDirectory, "addon-update-"));
-  const archivePath = path.join(stagingRoot, "Guildweaver.zip");
+  const downloadRoot = fs.mkdtempSync(path.join(config.dataDirectory, "addon-download-"));
+  const archivePath = path.join(downloadRoot, "Guildweaver.zip");
+  const addonParent = path.dirname(addonPath);
+  fs.mkdirSync(addonParent, { recursive: true });
+  const extractionRoot = path.join(
+    addonParent,
+    `.guildweaver-update-${process.pid}-${Date.now()}`,
+  );
 
   try {
     const archiveResponse = await fetchImpl(assets.archive);
@@ -243,11 +225,10 @@ export async function ensureAddonCurrent(
       throw new Error("Guildweaver update checksum did not match");
     }
 
-    const extractedPath = path.join(stagingRoot, "extracted");
-    fs.mkdirSync(extractedPath, { recursive: true });
-    extractArchive(archivePath, extractedPath);
+    fs.mkdirSync(extractionRoot, { recursive: true });
+    extractArchive(archivePath, extractionRoot);
 
-    const stagedAddonPath = path.join(extractedPath, "Guildweaver");
+    const stagedAddonPath = path.join(extractionRoot, "Guildweaver");
     const stagedToc = path.join(stagedAddonPath, "Guildweaver.toc");
     const stagedManifest = jsonFile(path.join(stagedAddonPath, "release.json"));
 
@@ -264,6 +245,7 @@ export async function ensureAddonCurrent(
       commit: manifest.commit,
     };
   } finally {
-    fs.rmSync(stagingRoot, { recursive: true, force: true });
+    fs.rmSync(downloadRoot, { recursive: true, force: true });
+    fs.rmSync(extractionRoot, { recursive: true, force: true });
   }
 }
