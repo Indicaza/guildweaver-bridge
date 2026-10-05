@@ -39,11 +39,21 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
       ? path.resolve(parsed.savedVariablesPath)
       : null,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 3000,
+    dataDirectory,
     statePath: path.resolve(
       parsed.statePath || path.join(dataDirectory, "bridge-state.json"),
     ),
     credentialsPath: path.resolve(
       parsed.credentialsPath || path.join(dataDirectory, "bridge-credentials.json"),
+    ),
+    lockPath: path.resolve(
+      parsed.lockPath || path.join(dataDirectory, "bridge.lock"),
+    ),
+    logPath: path.resolve(
+      parsed.logPath || path.join(dataDirectory, "bridge.log"),
+    ),
+    backgroundLauncherPath: path.resolve(
+      parsed.backgroundLauncherPath || path.join(dataDirectory, "background.vbs"),
     ),
     configPath: fs.existsSync(resolved) ? resolved : null,
   };

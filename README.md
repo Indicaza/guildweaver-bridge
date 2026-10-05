@@ -11,7 +11,7 @@ Normal users do not configure tokens, Discord IDs, or file paths.
 ```text
 Install Guildweaver + Guildweaver Bridge
         ↓
-Run the bridge
+Run background install once
         ↓
 Bridge finds WoW automatically
         ↓
@@ -23,7 +23,9 @@ Click “Connect Guildweaver”
         ↓
 Bridge receives a scoped device credential
         ↓
-Character sync runs automatically from then on
+Bridge starts silently with Windows
+        ↓
+Character sync happens automatically
 ```
 
 The device credential is bound by Holdfast to the Discord member who approved it. The bridge does not choose a member ID and cannot use its credential to sync characters into another member's profile.
@@ -47,15 +49,43 @@ Guildweaver addon
 
 The packaged desktop build will remove the Node.js requirement for normal users.
 
-## Run from source
+## Recommended Windows setup
+
+Clone the repository once, then install the bridge as a per-user background process:
 
 ```powershell
 git clone git@github.com:Indicaza/guildweaver-bridge.git
 cd guildweaver-bridge
+npm run background:install
+```
+
+On first install the bridge pairs with Holdfast if needed, registers a hidden launcher under the current Windows user's startup entries, and starts immediately.
+
+After that there is no terminal to keep open. The bridge starts automatically when the user signs into Windows and keeps only one watcher process alive.
+
+Check it:
+
+```powershell
+npm run background:status
+```
+
+Remove it:
+
+```powershell
+npm run background:uninstall
+```
+
+No administrator privileges are intended to be required because startup registration is scoped to the current Windows user.
+
+## Foreground development
+
+To run it visibly instead:
+
+```powershell
 npm start
 ```
 
-On first run the bridge opens the Holdfast pairing page in your browser. Approve the connection and return to the game. The credential is stored in the operating system's local application-data directory, not in the repository.
+If the background bridge is already running, foreground watch mode exits rather than starting a duplicate watcher.
 
 No `guildweaver-bridge.json` file is required for a standard installation.
 
@@ -93,13 +123,11 @@ WoW flushes SavedVariables on logout and `/reload`. To pair if needed and perfor
 npm run once
 ```
 
-## Watch mode
+## Watch behavior
 
-```powershell
-npm start
-```
+The background process scans the local Guildweaver SavedVariables file and sends only revisions that Holdfast has not already accepted. When nothing has changed, it does not send network requests.
 
-Watch mode polls SavedVariables and sends only revisions that Holdfast has not already accepted.
+WoW currently flushes SavedVariables on logout and `/reload`, so those events remain the handoff point from the addon to the companion bridge.
 
 ## Pair only
 
@@ -107,14 +135,17 @@ Watch mode polls SavedVariables and sends only revisions that Holdfast has not a
 npm run pair
 ```
 
-This is mainly useful for setup/debugging. Normal `npm start` and `npm run once` pair automatically when needed.
+This is mainly useful for setup/debugging. Normal sync and background installation pair automatically when needed.
 
 ## Local data
 
-Guildweaver Bridge stores two local files in the OS application-data directory:
+Guildweaver Bridge stores local runtime data in the OS application-data directory:
 
-- `bridge-credentials.json` — the scoped device credential issued by Holdfast
+- `bridge-credentials.json` — scoped device credential issued by Holdfast
 - `bridge-state.json` — acknowledgment state for revisions already delivered
+- `bridge.lock` — single-instance guard for the watcher
+- `bridge.log` — background diagnostics, rotated at approximately 1 MB
+- `background.vbs` — hidden Windows launcher registered for the current user
 
 Deleting the credential causes the next run to pair again.
 
@@ -137,7 +168,7 @@ The device credential is scoped to Guildweaver bridge APIs; Holdfast rank, permi
 
 ## Next
 
-1. Package the bridge as a Windows executable/tray app.
-2. Add start-with-Windows and update handling.
+1. Package the bridge as a Windows executable so normal users do not need Node or Git.
+2. Add update handling.
 3. Add a website device-management page for viewing/revoking connected PCs.
 4. Use the same paired bridge for website-to-addon quest and notification sync.
