@@ -1,0 +1,16 @@
+{
+  "name": "guildweaver-bridge",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "description": "Local companion bridge between the Guildweaver WoW addon and guild websites.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/cli.js watch",
+    "once": "node src/cli.js once",
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --check src/config.js && node --check src/discovery.js && node --check src/savedVariables.js && node --check src/sync.js"
+  }
+}
