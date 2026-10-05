@@ -3,11 +3,15 @@ import test from "node:test";
 
 import {
   backgroundLauncherSource,
+  launchAgentPlistSource,
+  macBackgroundLauncherSource,
+  macPackageReplacementLauncherSource,
+  macRestartLauncherSource,
   packageReplacementLauncherSource,
   restartLauncherSource,
 } from "../src/background.js";
 
-test("background launcher starts the bridge hidden with stable absolute paths", () => {
+test("Windows background launcher starts the bridge hidden with stable absolute paths", () => {
   const source = backgroundLauncherSource({
     nodePath: "C:\\Program Files\\nodejs\\node.exe",
     cliPath: "C:\\Users\\Zach\\Projects\\guildweaver bridge\\src\\cli.js",
@@ -22,7 +26,34 @@ test("background launcher starts the bridge hidden with stable absolute paths", 
   assert.match(source, /, 0, False/);
 });
 
-test("restart launcher waits for the old bridge to exit before relaunching", () => {
+test("macOS background launcher uses absolute quoted paths", () => {
+  const source = macBackgroundLauncherSource({
+    nodePath: "/Users/Zach/Library/Application Support/Guildweaver/app/node",
+    cliPath: "/Users/Zach/Library/Application Support/Guildweaver/app/app/src/cli.js",
+    configPath: "/Users/Zach/My Config/guildweaver.json",
+  });
+
+  assert.match(source, /^#!\/bin\/sh/);
+  assert.match(source, /watch --background/);
+  assert.match(source, /Application Support/);
+  assert.match(source, /My Config/);
+  assert.match(source, /^exec /m);
+});
+
+test("macOS LaunchAgent is persistent and points at the stable launcher", () => {
+  const source = launchAgentPlistSource({
+    launcherPath: "/Users/Zach/Library/Application Support/Guildweaver/background.sh",
+    logPath: "/Users/Zach/Library/Application Support/Guildweaver/bridge.log",
+  });
+
+  assert.match(source, /com\.guildweaver\.bridge/);
+  assert.match(source, /<key>RunAtLoad<\/key>/);
+  assert.match(source, /<key>KeepAlive<\/key>/);
+  assert.match(source, /background\.sh/);
+  assert.match(source, /bridge\.log/);
+});
+
+test("Windows restart launcher waits before relaunching", () => {
   const source = restartLauncherSource(
     "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\background.vbs",
     "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\restart.vbs",
@@ -35,7 +66,19 @@ test("restart launcher waits for the old bridge to exit before relaunching", () 
   assert.match(source, /restart\.vbs/);
 });
 
-test("packaged update waits for the current PID then swaps and relaunches", () => {
+test("macOS restart hands control back to launchd", () => {
+  const source = macRestartLauncherSource({
+    serviceTarget: "gui/501/com.guildweaver.bridge",
+    scriptPath: "/tmp/guildweaver restart.sh",
+  });
+
+  assert.match(source, /sleep 2/);
+  assert.match(source, /launchctl kickstart -k/);
+  assert.match(source, /gui\/501\/com\.guildweaver\.bridge/);
+  assert.match(source, /rm -f/);
+});
+
+test("Windows packaged update waits for the current PID then swaps and relaunches", () => {
   const source = packageReplacementLauncherSource({
     pid: 4242,
     installDirectory: "C:\\Users\\Zach\\AppData\\Local\\Guildweaver\\app",
@@ -50,4 +93,21 @@ test("packaged update waits for the current PID then swaps and relaunches", () =
   assert.match(source, /app\.next/);
   assert.match(source, /background\.vbs/);
   assert.match(source, /replace-bridge\.vbs/);
+});
+
+test("macOS packaged update waits for the PID, swaps atomically, and restarts launchd", () => {
+  const source = macPackageReplacementLauncherSource({
+    pid: 4242,
+    installDirectory: "/Users/Zach/Library/Application Support/Guildweaver/app",
+    nextPath: "/Users/Zach/Library/Application Support/Guildweaver/app.next",
+    serviceTarget: "gui/501/com.guildweaver.bridge",
+    scriptPath: "/Users/Zach/Library/Application Support/Guildweaver/replace-bridge.sh",
+  });
+
+  assert.match(source, /kill -0 4242/);
+  assert.match(source, /app\.backup/);
+  assert.match(source, /app\.next/);
+  assert.match(source, /launchctl kickstart -k/);
+  assert.match(source, /gui\/501\/com\.guildweaver\.bridge/);
+  assert.match(source, /mv/);
 });
