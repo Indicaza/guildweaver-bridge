@@ -38,9 +38,29 @@ test("macOS release assets are architecture-specific", () => {
   });
 });
 
+test("Linux release assets are architecture-specific", () => {
+  assert.deepEqual(bridgeReleaseAssetUrls("edge", "linux", "x64"), {
+    manifest:
+      "https://github.com/Indicaza/guildweaver-bridge/releases/download/edge/release.json",
+    archive:
+      "https://github.com/Indicaza/guildweaver-bridge/releases/download/edge/GuildweaverBridge-linux-x64.zip",
+    checksum:
+      "https://github.com/Indicaza/guildweaver-bridge/releases/download/edge/GuildweaverBridge-linux-x64.zip.sha256",
+  });
+
+  assert.deepEqual(bridgeReleaseAssetUrls("beta", "linux", "arm64"), {
+    manifest:
+      "https://github.com/Indicaza/guildweaver-bridge/releases/download/beta/release.json",
+    archive:
+      "https://github.com/Indicaza/guildweaver-bridge/releases/download/beta/GuildweaverBridge-linux-arm64.zip",
+    checksum:
+      "https://github.com/Indicaza/guildweaver-bridge/releases/download/beta/GuildweaverBridge-linux-arm64.zip.sha256",
+  });
+});
+
 test("unsupported packaged platforms are rejected", () => {
   assert.throws(
-    () => bridgeReleaseAssetUrls("edge", "linux", "x64"),
+    () => bridgeReleaseAssetUrls("edge", "freebsd", "x64"),
     /Unsupported Guildweaver Bridge package platform/,
   );
 });

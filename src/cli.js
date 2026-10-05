@@ -5,14 +5,21 @@ import process from "node:process";
 
 import { ensureAddonCurrent } from "./addonManager.js";
 import {
-  backgroundStatus,
-  installBackground,
-  scheduleBackgroundRestart,
-  schedulePackageReplacement,
-  uninstallBackground,
+  backgroundStatus as nativeBackgroundStatus,
+  installBackground as installNativeBackground,
+  scheduleBackgroundRestart as scheduleNativeBackgroundRestart,
+  schedulePackageReplacement as scheduleNativePackageReplacement,
+  uninstallBackground as uninstallNativeBackground,
 } from "./background.js";
 import { loadConfig } from "./config.js";
 import { acquireInstanceLock } from "./instanceLock.js";
+import {
+  backgroundStatus as linuxBackgroundStatus,
+  installBackground as installLinuxBackground,
+  scheduleBackgroundRestart as scheduleLinuxBackgroundRestart,
+  schedulePackageReplacement as scheduleLinuxPackageReplacement,
+  uninstallBackground as uninstallLinuxBackground,
+} from "./linuxBackground.js";
 import { enableFileLogging } from "./logger.js";
 import {
   ensurePackagedBridgeCurrent,
@@ -21,6 +28,23 @@ import {
 import { clearCredentials, ensurePaired } from "./pairing.js";
 import { updateBridgeSource } from "./sourceUpdater.js";
 import { syncOnce } from "./sync.js";
+
+const platformBackground =
+  process.platform === "linux"
+    ? {
+        backgroundStatus: linuxBackgroundStatus,
+        installBackground: installLinuxBackground,
+        scheduleBackgroundRestart: scheduleLinuxBackgroundRestart,
+        schedulePackageReplacement: scheduleLinuxPackageReplacement,
+        uninstallBackground: uninstallLinuxBackground,
+      }
+    : {
+        backgroundStatus: nativeBackgroundStatus,
+        installBackground: installNativeBackground,
+        scheduleBackgroundRestart: scheduleNativeBackgroundRestart,
+        schedulePackageReplacement: scheduleNativePackageReplacement,
+        uninstallBackground: uninstallNativeBackground,
+      };
 
 function optionValue(args, name) {
   const index = args.indexOf(name);
@@ -124,13 +148,13 @@ async function main() {
   }
 
   if (command === "uninstall-background") {
-    uninstallBackground(config);
+    platformBackground.uninstallBackground(config);
     console.log("Guildweaver background bridge removed.");
     return;
   }
 
   if (command === "background-status") {
-    const status = backgroundStatus(config);
+    const status = platformBackground.backgroundStatus(config);
     console.log(
       `Guildweaver background bridge: ${status.installed ? "installed" : "not installed"}, ${status.running ? `running (PID ${status.pid})` : "not running"}.`,
     );
@@ -143,7 +167,7 @@ async function main() {
     const addonResult = await ensureAddonCurrent(config);
     const addonMessage = describeAddonUpdate(addonResult);
     if (addonMessage) console.log(addonMessage);
-    const installed = installBackground(config);
+    const installed = platformBackground.installBackground(config);
     console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     console.log("Guildweaver addon is installed and automatic updates are enabled.");
     console.log("Background sync installed and started. It will launch automatically when you sign in.");
@@ -189,7 +213,7 @@ async function main() {
       console.log(
         `Guildweaver Bridge package updated ${String(result.previousCommit || "").slice(0, 8)} -> ${String(result.commit || "").slice(0, 8)}. Restarting...`,
       );
-      schedulePackageReplacement(config, result.nextPath);
+      platformBackground.schedulePackageReplacement(config, result.nextPath);
       releaseLock();
       return;
     }
@@ -197,7 +221,7 @@ async function main() {
     console.log(
       `Guildweaver Bridge updated ${String(result.previousCommit || "").slice(0, 8)} -> ${String(result.commit || "").slice(0, 8)}. Restarting...`,
     );
-    scheduleBackgroundRestart(config);
+    platformBackground.scheduleBackgroundRestart(config);
     releaseLock();
   };
 
