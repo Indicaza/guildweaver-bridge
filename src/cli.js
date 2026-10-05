@@ -3,7 +3,7 @@
 import process from "node:process";
 
 import { loadConfig } from "./config.js";
-import { ensurePaired } from "./pairing.js";
+import { clearCredentials, ensurePaired } from "./pairing.js";
 import { syncOnce } from "./sync.js";
 
 function optionValue(args, name) {
@@ -45,20 +45,42 @@ async function main() {
 
   const configPath = optionValue(args, "--config") || "guildweaver-bridge.json";
   const config = loadConfig(configPath);
-  const credentials = await ensurePaired(config);
-  const runtimeConfig = {
-    ...config,
-    deviceToken: credentials.deviceToken,
+  let credentials = null;
+  let runtimeConfig = null;
+
+  const pairRuntime = async () => {
+    credentials = await ensurePaired(config);
+    runtimeConfig = {
+      ...config,
+      deviceToken: credentials.deviceToken,
+    };
   };
+
+  await pairRuntime();
 
   if (command === "pair") {
     console.log(`Connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     return;
   }
 
+  const syncWithRepair = async () => {
+    try {
+      return await syncOnce(runtimeConfig);
+    } catch (error) {
+      if (!String(error?.message || "").includes("invalid_device_token")) {
+        throw error;
+      }
+
+      console.log("Holdfast connection expired or was revoked. Reconnecting…");
+      clearCredentials(config.credentialsPath);
+      await pairRuntime();
+      return syncOnce(runtimeConfig);
+    }
+  };
+
   const run = async () => {
     try {
-      const result = await syncOnce(runtimeConfig);
+      const result = await syncWithRepair();
 
       if (result.sent > 0 || command === "once") {
         console.log(
