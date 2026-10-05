@@ -1,42 +1,55 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+
+const DEFAULT_HOLDFAST_URL = "https://holdfast-tddi.onrender.com";
 
 function normalizeUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
-export function loadConfig(configPath = "guildweaver-bridge.json") {
-  const resolved = path.resolve(configPath);
-
-  if (!fs.existsSync(resolved)) {
-    throw new Error(`Config file not found: ${resolved}`);
+function appDataDirectory() {
+  if (process.platform === "win32") {
+    return path.join(
+      process.env.LOCALAPPDATA || process.env.APPDATA || os.homedir(),
+      "Guildweaver",
+    );
   }
 
-  const parsed = JSON.parse(fs.readFileSync(resolved, "utf8"));
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "Guildweaver");
+  }
+
+  return path.join(
+    process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"),
+    "guildweaver",
+  );
+}
+
+export function loadConfig(configPath = "guildweaver-bridge.json") {
+  const resolved = path.resolve(configPath);
+  const parsed = fs.existsSync(resolved)
+    ? JSON.parse(fs.readFileSync(resolved, "utf8"))
+    : {};
+  const dataDirectory = appDataDirectory();
   const config = {
-    holdfastUrl: normalizeUrl(parsed.holdfastUrl),
-    memberId: String(parsed.memberId || "").trim(),
-    bridgeToken: String(parsed.bridgeToken || "").trim(),
+    holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
     wowRoot: parsed.wowRoot ? path.resolve(parsed.wowRoot) : null,
     savedVariablesPath: parsed.savedVariablesPath
       ? path.resolve(parsed.savedVariablesPath)
       : null,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 3000,
     statePath: path.resolve(
-      parsed.statePath || path.join(path.dirname(resolved), ".guildweaver-bridge-state.json"),
+      parsed.statePath || path.join(dataDirectory, "bridge-state.json"),
     ),
+    credentialsPath: path.resolve(
+      parsed.credentialsPath || path.join(dataDirectory, "bridge-credentials.json"),
+    ),
+    configPath: fs.existsSync(resolved) ? resolved : null,
   };
 
   if (!config.holdfastUrl) {
     throw new Error("holdfastUrl is required");
-  }
-
-  if (!config.memberId) {
-    throw new Error("memberId is required");
-  }
-
-  if (!config.bridgeToken) {
-    throw new Error("bridgeToken is required");
   }
 
   if (config.pollIntervalMs < 1000) {

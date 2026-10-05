@@ -34,16 +34,19 @@ function stateKey(filePath, characterKey) {
 }
 
 async function postSnapshot(config, envelope, fetchImpl) {
+  if (!config.deviceToken) {
+    throw new Error("Guildweaver Bridge is not paired with Holdfast");
+  }
+
   const response = await fetchImpl(
     `${config.holdfastUrl}/api/bridge/characters/snapshot`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.bridgeToken}`,
+        Authorization: `Bearer ${config.deviceToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        memberId: config.memberId,
         revision: Number(envelope.revision),
         snapshot: envelope.payload,
       }),

@@ -3,6 +3,7 @@
 import process from "node:process";
 
 import { loadConfig } from "./config.js";
+import { clearCredentials, ensurePaired } from "./pairing.js";
 import { syncOnce } from "./sync.js";
 
 function optionValue(args, name) {
@@ -16,10 +17,14 @@ function usage() {
 Usage:
   node src/cli.js once [--config path]
   node src/cli.js watch [--config path]
+  node src/cli.js pair [--config path]
 
 Commands:
-  once   Read Guildweaver SavedVariables and sync unsent character revisions.
-  watch  Keep polling for newly flushed SavedVariables and sync them.
+  once   Pair if needed, then sync unsent Guildweaver character revisions.
+  watch  Pair if needed, then keep watching for newly flushed SavedVariables.
+  pair   Connect this PC to Holdfast and exit.
+
+A config file is optional. Standard WoW installs and Holdfast production are discovered automatically.
 `);
 }
 
@@ -32,7 +37,7 @@ async function main() {
     return;
   }
 
-  if (!new Set(["once", "watch"]).has(command)) {
+  if (!new Set(["once", "watch", "pair"]).has(command)) {
     usage();
     process.exitCode = 1;
     return;
@@ -40,10 +45,42 @@ async function main() {
 
   const configPath = optionValue(args, "--config") || "guildweaver-bridge.json";
   const config = loadConfig(configPath);
+  let credentials = null;
+  let runtimeConfig = null;
+
+  const pairRuntime = async () => {
+    credentials = await ensurePaired(config);
+    runtimeConfig = {
+      ...config,
+      deviceToken: credentials.deviceToken,
+    };
+  };
+
+  await pairRuntime();
+
+  if (command === "pair") {
+    console.log(`Connected as Holdfast member ${credentials.memberId || "unknown"}.`);
+    return;
+  }
+
+  const syncWithRepair = async () => {
+    try {
+      return await syncOnce(runtimeConfig);
+    } catch (error) {
+      if (!String(error?.message || "").includes("invalid_device_token")) {
+        throw error;
+      }
+
+      console.log("Holdfast connection expired or was revoked. Reconnecting…");
+      clearCredentials(config.credentialsPath);
+      await pairRuntime();
+      return syncOnce(runtimeConfig);
+    }
+  };
 
   const run = async () => {
     try {
-      const result = await syncOnce(config);
+      const result = await syncWithRepair();
 
       if (result.sent > 0 || command === "once") {
         console.log(

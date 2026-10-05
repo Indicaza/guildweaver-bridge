@@ -1,7 +1,5 @@
 {
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
-  "memberId": "YOUR_DISCORD_MEMBER_ID",
-  "bridgeToken": "YOUR_GUILDWEAVER_BRIDGE_TOKEN",
   "wowRoot": "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_",
   "pollIntervalMs": 3000
 }
