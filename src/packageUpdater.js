@@ -37,6 +37,13 @@ function releaseAssetNames(platform = process.platform, arch = process.arch) {
     };
   }
 
+  if (platform === "linux" && (arch === "arm64" || arch === "x64")) {
+    return {
+      archive: `GuildweaverBridge-linux-${arch}.zip`,
+      checksum: `GuildweaverBridge-linux-${arch}.zip.sha256`,
+    };
+  }
+
   throw new Error(`Unsupported Guildweaver Bridge package platform: ${platform}-${arch}`);
 }
 
@@ -134,7 +141,7 @@ function validatePackageRoot(packageRoot, expectedCommit = null) {
     throw new Error("Guildweaver Bridge package is incomplete");
   }
 
-  if (process.platform === "darwin") {
+  if (process.platform !== "win32") {
     fs.chmodSync(nodePath, 0o755);
   }
 
@@ -169,8 +176,8 @@ function replaceDirectory(targetPath, stagedPath) {
 }
 
 export function installPackagedBridge(config, { packageRoot = path.dirname(process.execPath) } = {}) {
-  if (process.platform !== "win32" && process.platform !== "darwin") {
-    throw new Error("Packaged Guildweaver Bridge installation supports Windows and macOS only");
+  if (!["win32", "darwin", "linux"].includes(process.platform)) {
+    throw new Error("Packaged Guildweaver Bridge installation supports Windows, macOS, and Linux only");
   }
 
   const source = validatePackageRoot(packageRoot);
