@@ -2,18 +2,20 @@
 
 Guildweaver Bridge is the local companion process between the Guildweaver World of Warcraft addon and a Guildweaver-compatible website.
 
-The WoW addon never performs HTTP requests. It writes versioned outbound data to SavedVariables. The bridge reads those files and delivers new revisions to the website.
+The WoW addon never performs HTTP requests. It writes versioned outbound data to SavedVariables. The bridge reads those files, delivers new revisions to the website, and keeps the Guildweaver addon current.
 
 ## User flow
 
-Normal users do not configure tokens, Discord IDs, or file paths.
+Normal users do not configure tokens, Discord IDs, addon paths, or update commands.
 
 ```text
-Install Guildweaver + Guildweaver Bridge
+Install Guildweaver Bridge
         ↓
 Run background install once
         ↓
 Bridge finds WoW automatically
+        ↓
+Bridge installs/updates Guildweaver
         ↓
 Browser opens Holdfast once
         ↓
@@ -21,33 +23,55 @@ Sign in with Discord if needed
         ↓
 Click “Connect Guildweaver”
         ↓
-Bridge receives a scoped device credential
-        ↓
 Bridge starts silently with Windows
         ↓
-Character sync happens automatically
+Addon updates + character sync happen automatically
 ```
 
 The device credential is bound by Holdfast to the Discord member who approved it. The bridge does not choose a member ID and cannot use its credential to sync characters into another member's profile.
 
-## Alpha data flow
+## Data flow
 
 ```text
 Guildweaver addon
     -> WTF/Account/.../SavedVariables/Guildweaver.lua
     -> Guildweaver Bridge
     -> paired device credential
-    -> POST /api/bridge/characters/snapshot
-    -> Holdfast member profile + character snapshot history
+    -> Holdfast API
+    -> member profile + snapshot history
 ```
+
+## Addon updates
+
+Guildweaver releases are published as tested GitHub Release artifacts. The bridge checks the configured channel periodically and installs only packages whose SHA-256 checksum matches the published release checksum.
+
+Channels:
+
+- `edge` — automated builds from merged `main`
+- `beta` — the newest tagged alpha/beta/RC build
+- `stable` — the newest tagged stable build
+
+The current alpha defaults to `edge` while Guildweaver is under active development.
+
+Updates are staged and validated before the installed addon directory is replaced. The packaged addon contains `release.json` so the bridge can compare the installed commit and compatibility metadata with the release.
+
+### Developer checkout behavior
+
+If `Interface\\AddOns\\Guildweaver` resolves to a git checkout or junction, the bridge does not replace it with a ZIP. Instead it:
+
+1. checks whether the worktree is clean,
+2. runs `git fetch origin main`,
+3. fast-forwards to `origin/main` only,
+4. leaves a dirty checkout untouched.
+
+This keeps the local junction development flow safe while normal users never need Git.
 
 ## Requirements
 
 - Node.js 22+ while developing from source
-- Guildweaver addon installed and enabled
 - A Guildweaver-compatible website with device pairing enabled
 
-The packaged desktop build will remove the Node.js requirement for normal users.
+The packaged desktop build will remove the Node.js and Git requirements for normal users.
 
 ## Recommended Windows setup
 
@@ -91,33 +115,25 @@ No `guildweaver-bridge.json` file is required for a standard installation.
 
 ## Optional advanced config
 
-A config file is only needed for non-standard WoW installs, development websites, or custom polling behavior.
+A config file is only needed for non-standard WoW installs, development websites, custom polling, or update channels.
 
 ```json
 {
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
   "wowRoot": "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_",
-  "pollIntervalMs": 3000
+  "pollIntervalMs": 3000,
+  "addonUpdateChannel": "edge",
+  "addonUpdateIntervalMs": 900000
 }
 ```
 
-Then run with the default config filename:
-
-```powershell
-npm start
-```
-
-or an explicit file:
-
-```powershell
-node src/cli.js watch --config path\to\config.json
-```
+Valid addon update channels are `edge`, `beta`, and `stable`.
 
 There are intentionally no member IDs or authentication secrets in the config.
 
 ## Sync once
 
-WoW flushes SavedVariables on logout and `/reload`. To pair if needed and perform one deterministic sync pass:
+WoW flushes SavedVariables on logout and `/reload`. To check the addon update channel, pair if needed, and perform one deterministic sync pass:
 
 ```powershell
 npm run once
@@ -125,7 +141,9 @@ npm run once
 
 ## Watch behavior
 
-The background process scans the local Guildweaver SavedVariables file and sends only revisions that Holdfast has not already accepted. When nothing has changed, it does not send network requests.
+The background process scans the local Guildweaver SavedVariables file and sends only revisions that Holdfast has not already accepted. When nothing has changed, it does not send sync requests.
+
+Addon update checks run on their own slower interval and are independent of the SavedVariables polling interval.
 
 WoW currently flushes SavedVariables on logout and `/reload`, so those events remain the handoff point from the addon to the companion bridge.
 
@@ -146,6 +164,7 @@ Guildweaver Bridge stores local runtime data in the OS application-data director
 - `bridge.lock` — single-instance guard for the watcher
 - `bridge.log` — background diagnostics, rotated at approximately 1 MB
 - `background.vbs` — hidden Windows launcher registered for the current user
+- temporary addon update staging directories while an update is being verified
 
 Deleting the credential causes the next run to pair again.
 
@@ -164,11 +183,13 @@ Pairing uses a short-lived one-time device code. The website requires the user t
 
 Character ingest derives the member from that device credential. A bridge request cannot select an arbitrary Discord/member ID.
 
+Addon updates are accepted only after the downloaded ZIP matches the SHA-256 checksum published with the release and the staged package contains matching release metadata.
+
 The device credential is scoped to Guildweaver bridge APIs; Holdfast rank, permissions, Rep, Marks, and other authoritative guild state remain website-owned.
 
 ## Next
 
 1. Package the bridge as a Windows executable so normal users do not need Node or Git.
-2. Add update handling.
+2. Add bridge self-update + rollback.
 3. Add a website device-management page for viewing/revoking connected PCs.
 4. Use the same paired bridge for website-to-addon quest and notification sync.
