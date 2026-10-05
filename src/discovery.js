@@ -21,6 +21,19 @@ function variantRoots(wowDirectories) {
   );
 }
 
+function childDirectories(root) {
+  if (!root || !fs.existsSync(root)) return [];
+
+  try {
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .map((entry) => path.join(root, entry.name));
+  } catch {
+    return [];
+  }
+}
+
 function macWowDirectories() {
   const candidates = [
     "/Applications/World of Warcraft",
@@ -40,11 +53,70 @@ function macWowDirectories() {
   return candidates;
 }
 
+function addWinePrefixCandidates(candidates, prefix) {
+  if (!prefix) return;
+  candidates.push(
+    path.join(prefix, "drive_c", "Program Files (x86)", "World of Warcraft"),
+    path.join(prefix, "drive_c", "Program Files", "World of Warcraft"),
+  );
+}
+
+export function linuxWowDirectories({
+  homeDirectory = os.homedir(),
+  env = process.env,
+} = {}) {
+  const candidates = [path.join(homeDirectory, "Games", "World of Warcraft")];
+
+  addWinePrefixCandidates(candidates, env.WINEPREFIX);
+  addWinePrefixCandidates(candidates, path.join(homeDirectory, ".wine"));
+
+  const gamesRoot = path.join(homeDirectory, "Games");
+  for (const gameRoot of childDirectories(gamesRoot)) {
+    candidates.push(path.join(gameRoot, "World of Warcraft"));
+    addWinePrefixCandidates(candidates, gameRoot);
+  }
+
+  const bottleRoots = [
+    path.join(homeDirectory, ".local", "share", "bottles", "bottles"),
+    path.join(
+      homeDirectory,
+      ".var",
+      "app",
+      "com.usebottles.bottles",
+      "data",
+      "bottles",
+      "bottles",
+    ),
+  ];
+  for (const bottleRoot of bottleRoots) {
+    for (const bottle of childDirectories(bottleRoot)) {
+      addWinePrefixCandidates(candidates, bottle);
+    }
+  }
+
+  const steamCompatRoots = [
+    path.join(homeDirectory, ".steam", "steam", "steamapps", "compatdata"),
+    path.join(homeDirectory, ".local", "share", "Steam", "steamapps", "compatdata"),
+  ];
+  for (const compatRoot of steamCompatRoots) {
+    for (const compatData of childDirectories(compatRoot)) {
+      addWinePrefixCandidates(candidates, path.join(compatData, "pfx"));
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
 export function findWowRoots() {
   const roots = [];
 
   if (process.platform === "darwin") {
     roots.push(...variantRoots(macWowDirectories()));
+    return [...new Set(existingDirectories(roots))];
+  }
+
+  if (process.platform === "linux") {
+    roots.push(...variantRoots(linuxWowDirectories()));
     return [...new Set(existingDirectories(roots))];
   }
 
