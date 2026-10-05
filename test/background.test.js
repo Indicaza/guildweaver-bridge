@@ -95,19 +95,23 @@ test("Windows packaged update waits for the current PID then swaps and relaunche
   assert.match(source, /replace-bridge\.vbs/);
 });
 
-test("macOS packaged update waits for the PID, swaps atomically, and restarts launchd", () => {
+test("macOS packaged update unloads launchd before swapping and bootstraps it after", () => {
   const source = macPackageReplacementLauncherSource({
     pid: 4242,
     installDirectory: "/Users/Zach/Library/Application Support/Guildweaver/app",
     nextPath: "/Users/Zach/Library/Application Support/Guildweaver/app.next",
+    serviceDomain: "gui/501",
     serviceTarget: "gui/501/com.guildweaver.bridge",
+    launchAgentPath: "/Users/Zach/Library/LaunchAgents/com.guildweaver.bridge.plist",
     scriptPath: "/Users/Zach/Library/Application Support/Guildweaver/replace-bridge.sh",
   });
 
+  assert.match(source, /launchctl bootout/);
   assert.match(source, /kill -0 4242/);
   assert.match(source, /app\.backup/);
   assert.match(source, /app\.next/);
+  assert.match(source, /launchctl bootstrap/);
+  assert.match(source, /LaunchAgents\/com\.guildweaver\.bridge\.plist/);
   assert.match(source, /launchctl kickstart -k/);
   assert.match(source, /gui\/501\/com\.guildweaver\.bridge/);
-  assert.match(source, /mv/);
 });
