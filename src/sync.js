@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { writeBridgeInbox } from "./bridgeInbox.js";
 import { findSavedVariablesFiles } from "./discovery.js";
 import { outboundCharacters, parseSavedVariables } from "./savedVariables.js";
 
 function readState(statePath) {
   if (!fs.existsSync(statePath)) {
-    return { sentRevisions: {} };
+    return { sentRevisions: {}, questActions: {}, lastQuestSyncAt: 0 };
   }
 
   try {
@@ -16,9 +17,14 @@ function readState(statePath) {
         parsed?.sentRevisions && typeof parsed.sentRevisions === "object"
           ? parsed.sentRevisions
           : {},
+      questActions:
+        parsed?.questActions && typeof parsed.questActions === "object"
+          ? parsed.questActions
+          : {},
+      lastQuestSyncAt: Number(parsed?.lastQuestSyncAt) || 0,
     };
   } catch {
-    return { sentRevisions: {} };
+    return { sentRevisions: {}, questActions: {}, lastQuestSyncAt: 0 };
   }
 }
 
@@ -31,6 +37,36 @@ function writeState(statePath, state) {
 
 function stateKey(filePath, characterKey) {
   return `${path.resolve(filePath)}::${characterKey}`;
+}
+
+function outboundQuestActions(database) {
+  const actions = database?.sync?.outbound?.questActions;
+  if (!actions || typeof actions !== "object" || Array.isArray(actions)) return {};
+  return actions;
+}
+
+function validQuestAction(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    typeof value.id === "string" &&
+    ["join", "leave"].includes(value.action) &&
+    typeof value.questId === "string" &&
+    typeof value.objectiveId === "string"
+  );
+}
+
+async function responseBody(response) {
+  const text = await response.text();
+  let body = null;
+
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+
+  return { text, body };
 }
 
 async function postSnapshot(config, envelope, fetchImpl) {
@@ -53,14 +89,7 @@ async function postSnapshot(config, envelope, fetchImpl) {
     },
   );
 
-  const text = await response.text();
-  let body = null;
-
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = null;
-  }
+  const { text, body } = await responseBody(response);
 
   if (!response.ok) {
     const detail = body?.error || text || `HTTP ${response.status}`;
@@ -70,12 +99,56 @@ async function postSnapshot(config, envelope, fetchImpl) {
   return body;
 }
 
+async function postQuestActions(config, actions, fetchImpl) {
+  const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/quests/actions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.deviceToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ actions }),
+  });
+  const { text, body } = await responseBody(response);
+
+  if (!response.ok) {
+    const detail = body?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Holdfast rejected quest actions: ${detail}`);
+  }
+
+  return Array.isArray(body?.results) ? body.results : [];
+}
+
+async function getQuestSnapshot(config, fetchImpl) {
+  const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/quests/snapshot`, {
+    headers: { Authorization: `Bearer ${config.deviceToken}` },
+  });
+  const { text, body } = await responseBody(response);
+
+  if (!response.ok) {
+    const detail = body?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Holdfast quest sync failed: ${detail}`);
+  }
+
+  if (
+    !body ||
+    Number(body.schemaVersion) !== 1 ||
+    !Array.isArray(body.items) ||
+    !Number.isInteger(Number(body.revision))
+  ) {
+    throw new Error("Holdfast returned an invalid quest snapshot");
+  }
+
+  return body;
+}
+
 export async function syncOnce(
   config,
-  { fetchImpl = fetch, log = console.log } = {},
+  { fetchImpl = fetch, log = console.log, now = Date.now } = {},
 ) {
   const files = findSavedVariablesFiles(config);
   const state = readState(config.statePath);
+  const pendingQuestActions = new Map();
+  const currentQuestActionIds = new Set();
   let discovered = 0;
   let sent = 0;
   let skipped = 0;
@@ -116,7 +189,94 @@ export async function syncOnce(
           (result?.status ? ` (${result.status})` : ""),
       );
     }
+
+    for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
+      currentQuestActionIds.add(actionId);
+      if (state.questActions[actionId]) continue;
+
+      if (!validQuestAction(action)) {
+        state.questActions[actionId] = {
+          status: "rejected",
+          error: "invalid_local_quest_action",
+          updatedAt: now(),
+        };
+        continue;
+      }
+
+      pendingQuestActions.set(actionId, action);
+    }
   }
 
-  return { files: files.length, discovered, sent, skipped };
+  let questActionsSent = 0;
+
+  if (pendingQuestActions.size > 0) {
+    const results = await postQuestActions(
+      config,
+      [...pendingQuestActions.values()],
+      fetchImpl,
+    );
+
+    for (const result of results) {
+      const actionId = String(result?.id || "");
+      if (!pendingQuestActions.has(actionId)) continue;
+      if (!["applied", "already-applied", "rejected"].includes(result.status)) continue;
+
+      state.questActions[actionId] = {
+        status: result.status,
+        ...(result.error ? { error: result.error } : {}),
+        updatedAt: now(),
+      };
+      questActionsSent += 1;
+      log(
+        result.status === "rejected"
+          ? `Quest action ${actionId} rejected: ${result.error || "unknown"}`
+          : `Quest action ${actionId} ${result.status}.`,
+      );
+    }
+
+    writeState(config.statePath, state);
+  }
+
+  for (const actionId of Object.keys(state.questActions)) {
+    if (!currentQuestActionIds.has(actionId)) {
+      delete state.questActions[actionId];
+    }
+  }
+
+  const timestamp = now();
+  const questSyncDue =
+    questActionsSent > 0 ||
+    timestamp - state.lastQuestSyncAt >= config.questSyncIntervalMs;
+  let questSnapshotUpdated = false;
+
+  if (questSyncDue) {
+    const snapshot = await getQuestSnapshot(config, fetchImpl);
+    const acknowledgedQuestActions = [...currentQuestActionIds].filter(
+      (actionId) => state.questActions[actionId],
+    );
+    const inbox = writeBridgeInbox(config, {
+      quests: snapshot,
+      acknowledgedQuestActions,
+    });
+
+    state.lastQuestSyncAt = timestamp;
+    writeState(config.statePath, state);
+    questSnapshotUpdated = inbox.changed;
+
+    if (inbox.changed) {
+      log(
+        `Quest inbox updated to Holdfast revision ${snapshot.revision}; /reload to apply in WoW.`,
+      );
+    }
+  }
+
+  return {
+    files: files.length,
+    discovered,
+    sent,
+    skipped,
+    questActionsDiscovered: currentQuestActionIds.size,
+    questActionsSent,
+    questSnapshotUpdated,
+  };
 }
