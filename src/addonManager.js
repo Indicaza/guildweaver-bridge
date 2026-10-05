@@ -90,6 +90,16 @@ function runGit(cwd, args, execImpl = execFileSync) {
 }
 
 export function updateDeveloperCheckout(checkoutPath, { execImpl = execFileSync } = {}) {
+  const branch = runGit(
+    checkoutPath,
+    ["rev-parse", "--abbrev-ref", "HEAD"],
+    execImpl,
+  );
+
+  if (branch !== "main") {
+    return { status: "developer-branch", path: checkoutPath, branch };
+  }
+
   const dirty = runGit(checkoutPath, ["status", "--porcelain"], execImpl);
 
   if (dirty) {
