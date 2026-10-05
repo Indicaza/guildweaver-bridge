@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const INSTALL_VARIANTS = [
@@ -14,25 +15,48 @@ function existingDirectories(values) {
   return values.filter((value) => value && fs.existsSync(value));
 }
 
+function variantRoots(wowDirectories) {
+  return wowDirectories.flatMap((wow) =>
+    INSTALL_VARIANTS.map((variant) => path.join(wow, variant)),
+  );
+}
+
+function macWowDirectories() {
+  const candidates = [
+    "/Applications/World of Warcraft",
+    path.join(os.homedir(), "Applications", "World of Warcraft"),
+  ];
+
+  const volumesRoot = "/Volumes";
+  if (fs.existsSync(volumesRoot)) {
+    for (const entry of fs.readdirSync(volumesRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const volume = path.join(volumesRoot, entry.name);
+      candidates.push(path.join(volume, "World of Warcraft"));
+      candidates.push(path.join(volume, "Applications", "World of Warcraft"));
+    }
+  }
+
+  return candidates;
+}
+
 export function findWowRoots() {
   const roots = [];
+
+  if (process.platform === "darwin") {
+    roots.push(...variantRoots(macWowDirectories()));
+    return [...new Set(existingDirectories(roots))];
+  }
+
   const programFilesX86 = process.env["ProgramFiles(x86)"];
   const programFiles = process.env.ProgramFiles;
 
   for (const base of existingDirectories([programFilesX86, programFiles])) {
-    const wow = path.join(base, "World of Warcraft");
-
-    for (const variant of INSTALL_VARIANTS) {
-      roots.push(path.join(wow, variant));
-    }
+    roots.push(...variantRoots([path.join(base, "World of Warcraft")]));
   }
 
   for (const drive of ["C:", "D:", "E:"]) {
-    const wow = path.join(drive, "World of Warcraft");
-
-    for (const variant of INSTALL_VARIANTS) {
-      roots.push(path.join(wow, variant));
-    }
+    roots.push(...variantRoots([path.join(drive, "World of Warcraft")]));
   }
 
   return [...new Set(existingDirectories(roots))];
