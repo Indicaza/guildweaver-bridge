@@ -43,6 +43,7 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     addonPath: parsed.addonPath ? path.resolve(parsed.addonPath) : null,
     addonUpdateChannel,
     addonUpdateIntervalMs: Number(parsed.addonUpdateIntervalMs) || 15 * 60 * 1000,
+    bridgeUpdateIntervalMs: Number(parsed.bridgeUpdateIntervalMs) || 60 * 1000,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 3000,
     dataDirectory,
     statePath: path.resolve(
@@ -73,6 +74,10 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
 
   if (config.addonUpdateIntervalMs < 60_000) {
     throw new Error("addonUpdateIntervalMs must be at least 60000");
+  }
+
+  if (config.bridgeUpdateIntervalMs < 30_000) {
+    throw new Error("bridgeUpdateIntervalMs must be at least 30000");
   }
 
   if (!UPDATE_CHANNELS.has(config.addonUpdateChannel)) {
