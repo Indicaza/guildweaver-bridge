@@ -48,6 +48,35 @@ export function restartLauncherSource(backgroundLauncherPath, restartPath) {
   ].join("\r\n");
 }
 
+export function packageReplacementLauncherSource({
+  pid,
+  installDirectory,
+  nextPath,
+  backgroundLauncherPath,
+  scriptPath,
+}) {
+  const backupPath = `${installDirectory}.backup`;
+
+  return [
+    'Set shell = CreateObject("WScript.Shell")',
+    'Set fso = CreateObject("Scripting.FileSystemObject")',
+    'Set wmi = GetObject("winmgmts:\\\\.\\root\\cimv2")',
+    "Do",
+    `  Set processes = wmi.ExecQuery("SELECT ProcessId FROM Win32_Process WHERE ProcessId = ${Number(pid)}")`,
+    "  If processes.Count = 0 Then Exit Do",
+    "  WScript.Sleep 250",
+    "Loop",
+    `If fso.FolderExists(${vbsString(backupPath)}) Then fso.DeleteFolder ${vbsString(backupPath)}, True`,
+    `If fso.FolderExists(${vbsString(installDirectory)}) Then fso.MoveFolder ${vbsString(installDirectory)}, ${vbsString(backupPath)}`,
+    `fso.MoveFolder ${vbsString(nextPath)}, ${vbsString(installDirectory)}`,
+    `shell.Run ${vbsString(`wscript.exe ${quoteCommandArgument(backgroundLauncherPath)}`)}, 0, False`,
+    "WScript.Sleep 1500",
+    `If fso.FolderExists(${vbsString(backupPath)}) Then fso.DeleteFolder ${vbsString(backupPath)}, True`,
+    `If fso.FileExists(${vbsString(scriptPath)}) Then fso.DeleteFile ${vbsString(scriptPath)}, True`,
+    "",
+  ].join("\r\n");
+}
+
 function cliPath() {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), "cli.js");
 }
@@ -141,6 +170,45 @@ export function scheduleBackgroundRestart(config, { spawnImpl = spawn } = {}) {
   child.unref?.();
 
   return { restartPath };
+}
+
+export function schedulePackageReplacement(
+  config,
+  nextPath,
+  { spawnImpl = spawn, pid = process.pid } = {},
+) {
+  requireWindows();
+
+  if (!fs.existsSync(config.backgroundLauncherPath)) {
+    throw new Error("Guildweaver background launcher is not installed");
+  }
+
+  if (!fs.existsSync(nextPath)) {
+    throw new Error("Staged Guildweaver Bridge update is missing");
+  }
+
+  const scriptPath = path.join(config.dataDirectory, "replace-bridge.vbs");
+  fs.mkdirSync(config.dataDirectory, { recursive: true });
+  fs.writeFileSync(
+    scriptPath,
+    packageReplacementLauncherSource({
+      pid,
+      installDirectory: config.installDirectory,
+      nextPath,
+      backgroundLauncherPath: config.backgroundLauncherPath,
+      scriptPath,
+    }),
+    "utf8",
+  );
+
+  const child = spawnImpl("wscript.exe", [scriptPath], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref?.();
+
+  return { scriptPath };
 }
 
 export function uninstallBackground(config, { spawnSyncImpl = spawnSync } = {}) {
