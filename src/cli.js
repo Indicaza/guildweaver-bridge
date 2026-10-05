@@ -68,7 +68,6 @@ async function main() {
   console.log(`Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms. Press Ctrl+C to stop.`);
 
   const timer = setInterval(run, config.pollIntervalMs);
-  timer.unref();
 
   await new Promise((resolve) => {
     const stop = () => {
