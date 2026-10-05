@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_HOLDFAST_URL = "https://holdfast-tddi.onrender.com";
+const UPDATE_CHANNELS = new Set(["edge", "beta", "stable"]);
 
 function normalizeUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
@@ -32,12 +33,16 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     ? JSON.parse(fs.readFileSync(resolved, "utf8"))
     : {};
   const dataDirectory = appDataDirectory();
+  const addonUpdateChannel = String(parsed.addonUpdateChannel || "edge").toLowerCase();
   const config = {
     holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
     wowRoot: parsed.wowRoot ? path.resolve(parsed.wowRoot) : null,
     savedVariablesPath: parsed.savedVariablesPath
       ? path.resolve(parsed.savedVariablesPath)
       : null,
+    addonPath: parsed.addonPath ? path.resolve(parsed.addonPath) : null,
+    addonUpdateChannel,
+    addonUpdateIntervalMs: Number(parsed.addonUpdateIntervalMs) || 15 * 60 * 1000,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 3000,
     dataDirectory,
     statePath: path.resolve(
@@ -64,6 +69,14 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
 
   if (config.pollIntervalMs < 1000) {
     throw new Error("pollIntervalMs must be at least 1000");
+  }
+
+  if (config.addonUpdateIntervalMs < 60_000) {
+    throw new Error("addonUpdateIntervalMs must be at least 60000");
+  }
+
+  if (!UPDATE_CHANNELS.has(config.addonUpdateChannel)) {
+    throw new Error("addonUpdateChannel must be edge, beta, or stable");
   }
 
   return config;

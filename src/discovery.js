@@ -14,7 +14,7 @@ function existingDirectories(values) {
   return values.filter((value) => value && fs.existsSync(value));
 }
 
-function defaultWowRoots() {
+export function findWowRoots() {
   const roots = [];
   const programFilesX86 = process.env["ProgramFiles(x86)"];
   const programFiles = process.env.ProgramFiles;
@@ -35,7 +35,7 @@ function defaultWowRoots() {
     }
   }
 
-  return existingDirectories(roots);
+  return [...new Set(existingDirectories(roots))];
 }
 
 function accountSavedVariableFiles(wowRoot) {
@@ -67,6 +67,32 @@ function accountSavedVariableFiles(wowRoot) {
   return files;
 }
 
+export function findAddonPath(config) {
+  if (config.addonPath) {
+    return config.addonPath;
+  }
+
+  const roots = config.wowRoot ? [config.wowRoot] : findWowRoots();
+  const existing = roots
+    .map((root) => path.join(root, "Interface", "AddOns", "Guildweaver"))
+    .find((candidate) => fs.existsSync(candidate));
+
+  if (existing) {
+    return existing;
+  }
+
+  const rootWithSavedVariables = roots.find(
+    (root) => accountSavedVariableFiles(root).length > 0,
+  );
+  const targetRoot = rootWithSavedVariables || roots[0];
+
+  if (!targetRoot) {
+    throw new Error("World of Warcraft installation was not found");
+  }
+
+  return path.join(targetRoot, "Interface", "AddOns", "Guildweaver");
+}
+
 export function findSavedVariablesFiles(config) {
   if (config.savedVariablesPath) {
     if (!fs.existsSync(config.savedVariablesPath)) {
@@ -76,7 +102,7 @@ export function findSavedVariablesFiles(config) {
     return [config.savedVariablesPath];
   }
 
-  const roots = config.wowRoot ? [config.wowRoot] : defaultWowRoots();
+  const roots = config.wowRoot ? [config.wowRoot] : findWowRoots();
   const files = [...new Set(roots.flatMap(accountSavedVariableFiles))];
 
   if (!files.length) {
