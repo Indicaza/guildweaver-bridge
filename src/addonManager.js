@@ -7,7 +7,7 @@ import { findAddonPath } from "./discovery.js";
 
 const RELEASE_DOWNLOAD_ROOT =
   "https://github.com/Indicaza/guildweaver/releases/download";
-const SUPPORTED_BRIDGE_PROTOCOL = 1;
+const SUPPORTED_BRIDGE_PROTOCOL = 2;
 
 function normalizePath(value) {
   const resolved = path.resolve(value);
