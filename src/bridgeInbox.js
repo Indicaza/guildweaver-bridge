@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { findAddonPath } from "./discovery.js";
 
+const GENERATED_INBOX = "Data/BridgeInbox.generated.lua";
+
 function luaString(value) {
   return `"${String(value)
     .replaceAll("\\", "\\\\")
@@ -54,6 +56,26 @@ function inboxMarker(quests, acknowledgedQuestActions) {
   return `-- Guildweaver Bridge inbox ${revision}:${acknowledgements}`;
 }
 
+function excludeGeneratedInboxFromCheckout(addonPath) {
+  if (!fs.existsSync(addonPath)) return;
+
+  const realPath = fs.realpathSync.native(addonPath);
+  const gitDirectory = path.join(realPath, ".git");
+  if (!fs.existsSync(gitDirectory) || !fs.statSync(gitDirectory).isDirectory()) return;
+
+  const excludePath = path.join(gitDirectory, "info", "exclude");
+  fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+  const existing = fs.existsSync(excludePath)
+    ? fs.readFileSync(excludePath, "utf8")
+    : "";
+  const lines = existing.split(/\r?\n/).map((line) => line.trim());
+
+  if (lines.includes(GENERATED_INBOX)) return;
+
+  const separator = existing && !existing.endsWith("\n") ? "\n" : "";
+  fs.appendFileSync(excludePath, `${separator}${GENERATED_INBOX}\n`, "utf8");
+}
+
 export function bridgeInboxSource({ quests, acknowledgedQuestActions = [] }) {
   const payload = {
     schemaVersion: 1,
@@ -67,7 +89,9 @@ export function bridgeInboxSource({ quests, acknowledgedQuestActions = [] }) {
 
 export function writeBridgeInbox(config, payload) {
   const addonPath = findAddonPath(config);
-  const inboxPath = path.join(addonPath, "Data", "BridgeInbox.generated.lua");
+  excludeGeneratedInboxFromCheckout(addonPath);
+
+  const inboxPath = path.join(addonPath, ...GENERATED_INBOX.split("/"));
   const source = bridgeInboxSource(payload);
   const marker = source.split("\n", 1)[0];
 
