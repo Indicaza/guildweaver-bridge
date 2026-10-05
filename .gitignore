@@ -1,0 +1,4 @@
+node_modules/
+guildweaver-bridge.json
+.guildweaver-bridge-state.json
+*.log
