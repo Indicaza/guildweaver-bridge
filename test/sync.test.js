@@ -30,7 +30,7 @@ function savedVariables(revision = 3) {
   }`;
 }
 
-test("posts each outbound revision once and persists acknowledgment state", async () => {
+test("posts each outbound revision once with the paired device credential", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-bridge-"));
   const savedVariablesPath = path.join(directory, "Guildweaver.lua");
   const statePath = path.join(directory, "state.json");
@@ -47,8 +47,7 @@ test("posts each outbound revision once and persists acknowledgment state", asyn
 
   const config = {
     holdfastUrl: "https://holdfast.example",
-    memberId: "discord-member-1",
-    bridgeToken: "secret",
+    deviceToken: "gwd_secret",
     savedVariablesPath,
     wowRoot: null,
     pollIntervalMs: 3000,
@@ -66,10 +65,10 @@ test("posts each outbound revision once and persists acknowledgment state", asyn
       requests[0].url,
       "https://holdfast.example/api/bridge/characters/snapshot",
     );
-    assert.equal(requests[0].options.headers.Authorization, "Bearer secret");
+    assert.equal(requests[0].options.headers.Authorization, "Bearer gwd_secret");
 
     const body = JSON.parse(requests[0].options.body);
-    assert.equal(body.memberId, "discord-member-1");
+    assert.equal("memberId" in body, false);
     assert.equal(body.revision, 3);
     assert.equal(body.snapshot.name, "Rook");
 
@@ -80,7 +79,7 @@ test("posts each outbound revision once and persists acknowledgment state", asyn
   }
 });
 
-test("does not acknowledge a revision when the website rejects it", async () => {
+test("does not acknowledge a revision when the website rejects the device", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-bridge-"));
   const savedVariablesPath = path.join(directory, "Guildweaver.lua");
   const statePath = path.join(directory, "state.json");
@@ -88,8 +87,7 @@ test("does not acknowledge a revision when the website rejects it", async () => 
 
   const config = {
     holdfastUrl: "https://holdfast.example",
-    memberId: "discord-member-1",
-    bridgeToken: "secret",
+    deviceToken: "gwd_secret",
     savedVariablesPath,
     wowRoot: null,
     pollIntervalMs: 3000,
@@ -100,12 +98,12 @@ test("does not acknowledge a revision when the website rejects it", async () => 
     await assert.rejects(
       syncOnce(config, {
         fetchImpl: async () =>
-          new Response(JSON.stringify({ error: "invalid_bridge_token" }), {
+          new Response(JSON.stringify({ error: "invalid_device_token" }), {
             status: 401,
           }),
         log: () => {},
       }),
-      /invalid_bridge_token/,
+      /invalid_device_token/,
     );
     assert.equal(fs.existsSync(statePath), false);
   } finally {
