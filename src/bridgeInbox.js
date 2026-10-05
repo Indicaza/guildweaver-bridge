@@ -48,26 +48,36 @@ function luaValue(value, depth = 0) {
   throw new Error(`Unsupported inbox value type: ${typeof value}`);
 }
 
+function inboxMarker(quests, acknowledgedQuestActions) {
+  const revision = Number(quests?.revision) || 0;
+  const acknowledgements = [...acknowledgedQuestActions].map(String).sort().join(",");
+  return `-- Guildweaver Bridge inbox ${revision}:${acknowledgements}`;
+}
+
 export function bridgeInboxSource({ quests, acknowledgedQuestActions = [] }) {
   const payload = {
     schemaVersion: 1,
-    generatedAt: new Date().toISOString(),
     acknowledgedQuestActions,
     quests,
   };
+  const marker = inboxMarker(quests, acknowledgedQuestActions);
 
-  return `local _, GW = ...\n\nGW.BridgeInbox = ${luaValue(payload)}\n`;
+  return `${marker}\nlocal _, GW = ...\n\nGW.BridgeInbox = ${luaValue(payload)}\n`;
 }
 
 export function writeBridgeInbox(config, payload) {
   const addonPath = findAddonPath(config);
   const inboxPath = path.join(addonPath, "Data", "BridgeInbox.generated.lua");
   const source = bridgeInboxSource(payload);
+  const marker = source.split("\n", 1)[0];
 
   fs.mkdirSync(path.dirname(inboxPath), { recursive: true });
 
-  if (fs.existsSync(inboxPath) && fs.readFileSync(inboxPath, "utf8") === source) {
-    return { path: inboxPath, changed: false };
+  if (fs.existsSync(inboxPath)) {
+    const existing = fs.readFileSync(inboxPath, "utf8");
+    if (existing.split("\n", 1)[0] === marker) {
+      return { path: inboxPath, changed: false };
+    }
   }
 
   const temporary = `${inboxPath}.tmp`;
