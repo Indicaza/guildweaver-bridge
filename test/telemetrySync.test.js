@@ -85,6 +85,95 @@ test("sends generic telemetry once with an idempotency key across paths with spa
   }
 });
 
+test("prefers an independent collector credential without changing Holdfast auth", async () => {
+  const { directory, config } = setup();
+  config.telemetryToken = "collector_secret";
+  const requests = [];
+
+  try {
+    const result = await syncOnce(config, {
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options });
+        return ok(url.includes("characters/snapshot") ? { status: "updated" } : undefined);
+      },
+      log: () => {},
+    });
+
+    assert.equal(result.sent, 1);
+    assert.equal(result.telemetrySent, 1);
+
+    const holdfast = requests.find((request) => request.url.includes("characters/snapshot"));
+    const collector = requests.find(
+      (request) => request.url === "https://collector.example/v1/telemetry",
+    );
+    assert.equal(holdfast.options.headers.Authorization, "Bearer gwd_secret");
+    assert.equal(collector.options.headers.Authorization, "Bearer collector_secret");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("collector-only mode sends telemetry without any Holdfast credential or request", async () => {
+  const { directory, config } = setup();
+  config.holdfastEnabled = false;
+  config.deviceToken = null;
+  config.telemetryToken = "collector_secret";
+  const requests = [];
+
+  try {
+    const result = await syncOnce(config, {
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options });
+        return ok();
+      },
+      log: () => {},
+    });
+
+    assert.equal(result.discovered, 0);
+    assert.equal(result.sent, 0);
+    assert.equal(result.questActionsDiscovered, 0);
+    assert.equal(result.questActionsSent, 0);
+    assert.equal(result.questSnapshotUpdated, false);
+    assert.equal(result.telemetryDiscovered, 1);
+    assert.equal(result.telemetrySent, 1);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://collector.example/v1/telemetry");
+    assert.equal(requests[0].options.headers.Authorization, "Bearer collector_secret");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("collector-only mode keeps telemetry queued when its credential is unavailable", async () => {
+  const { directory, config } = setup();
+  config.holdfastEnabled = false;
+  config.deviceToken = null;
+  config.telemetryToken = null;
+  const requests = [];
+
+  try {
+    const result = await syncOnce(config, {
+      fetchImpl: async (...args) => {
+        requests.push(args);
+        return ok();
+      },
+      log: () => {},
+    });
+
+    assert.equal(result.telemetrySent, 0);
+    assert.equal(result.telemetryFailed, 1);
+    assert.equal(requests.length, 0);
+
+    const stateExists = fs.existsSync(config.statePath);
+    if (stateExists) {
+      const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
+      assert.equal(Object.keys(state.sentTelemetryRevisions).length, 0);
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("keeps telemetry queued while offline and retries without duplicating legacy character delivery", async () => {
   const { directory, config } = setup();
   let telemetryOnline = false;

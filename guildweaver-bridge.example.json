@@ -1,4 +1,5 @@
 {
+  "holdfastEnabled": true,
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
   "telemetryEndpoint": null,
   "wowRoot": "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_",

@@ -1,4 +1,6 @@
 node_modules/
 guildweaver-bridge.json
 .guildweaver-bridge-state.json
+bridge-credentials.json
+telemetry-credentials.json
 *.log
