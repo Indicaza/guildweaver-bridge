@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "eventType": "auction_observation",
+  "capturedAt": 1791247600,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "60001",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-6ac2d704-1234abcd-5678ef90",
+  "characterId": "character-6ac2d704-aabbccdd-11223344",
+  "guildId": "guild-54b013a2",
+  "payload": {
+    "schemaVersion": 1,
+    "observedAt": 1791247600,
+    "mode": "commodity_search",
+    "api": "C_AuctionHouse",
+    "query": {
+      "itemId": 765
+    },
+    "totalResults": 2,
+    "truncated": false,
+    "rows": [
+      {
+        "itemId": 765,
+        "quantity": 10,
+        "unitPrice": 3100,
+        "auctionId": 10001,
+        "timeLeft": 2
+      },
+      {
+        "itemId": 765,
+        "quantity": 20,
+        "unitPrice": 3200,
+        "auctionId": 10002,
+        "timeLeft": 3
+      }
+    ]
+  }
+}
