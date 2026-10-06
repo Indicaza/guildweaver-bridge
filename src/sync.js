@@ -3,11 +3,30 @@ import path from "node:path";
 
 import { writeBridgeInbox } from "./bridgeInbox.js";
 import { findSavedVariablesFiles } from "./discovery.js";
-import { outboundCharacters, parseSavedVariables } from "./savedVariables.js";
+import {
+  assertSupportedSavedVariablesSchema,
+  outboundCharacters,
+  outboundTelemetry,
+  parseSavedVariables,
+} from "./savedVariables.js";
+import {
+  normalizeTelemetryRecord,
+  telemetryIdempotencyKey,
+  telemetryTransportBody,
+} from "./telemetry.js";
+
+function emptyState() {
+  return {
+    sentRevisions: {},
+    sentTelemetryRevisions: {},
+    questActions: {},
+    lastQuestSyncAt: 0,
+  };
+}
 
 function readState(statePath) {
   if (!fs.existsSync(statePath)) {
-    return { sentRevisions: {}, questActions: {}, lastQuestSyncAt: 0 };
+    return emptyState();
   }
 
   try {
@@ -17,6 +36,11 @@ function readState(statePath) {
         parsed?.sentRevisions && typeof parsed.sentRevisions === "object"
           ? parsed.sentRevisions
           : {},
+      sentTelemetryRevisions:
+        parsed?.sentTelemetryRevisions &&
+        typeof parsed.sentTelemetryRevisions === "object"
+          ? parsed.sentTelemetryRevisions
+          : {},
       questActions:
         parsed?.questActions && typeof parsed.questActions === "object"
           ? parsed.questActions
@@ -24,7 +48,7 @@ function readState(statePath) {
       lastQuestSyncAt: Number(parsed?.lastQuestSyncAt) || 0,
     };
   } catch {
-    return { sentRevisions: {}, questActions: {}, lastQuestSyncAt: 0 };
+    return emptyState();
   }
 }
 
@@ -35,8 +59,8 @@ function writeState(statePath, state) {
   fs.renameSync(temporary, statePath);
 }
 
-function stateKey(filePath, characterKey) {
-  return `${path.resolve(filePath)}::${characterKey}`;
+function stateKey(filePath, recordKey) {
+  return `${path.resolve(filePath)}::${recordKey}`;
 }
 
 function outboundQuestActions(database) {
@@ -99,6 +123,34 @@ async function postSnapshot(config, envelope, fetchImpl) {
   return body;
 }
 
+async function postTelemetry(config, record, fetchImpl) {
+  if (!config.telemetryEndpoint) {
+    return null;
+  }
+
+  if (!config.deviceToken) {
+    throw new Error("Generic telemetry transport requires a paired device credential");
+  }
+
+  const response = await fetchImpl(config.telemetryEndpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.deviceToken}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": telemetryIdempotencyKey(record),
+    },
+    body: JSON.stringify(telemetryTransportBody(record)),
+  });
+  const { text, body } = await responseBody(response);
+
+  if (!response.ok) {
+    const detail = body?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Telemetry ingestion rejected record: ${detail}`);
+  }
+
+  return body;
+}
+
 async function postQuestActions(config, actions, fetchImpl) {
   const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/quests/actions`, {
     method: "POST",
@@ -152,10 +204,26 @@ export async function syncOnce(
   let discovered = 0;
   let sent = 0;
   let skipped = 0;
+  let skippedFiles = 0;
+  let telemetryDiscovered = 0;
+  let telemetrySent = 0;
+  let telemetrySkipped = 0;
+  let telemetryDeferred = 0;
+  let telemetryFailed = 0;
 
   for (const filePath of files) {
-    const source = fs.readFileSync(filePath, "utf8");
-    const database = parseSavedVariables(source);
+    let database;
+
+    try {
+      const source = fs.readFileSync(filePath, "utf8");
+      database = parseSavedVariables(source);
+      assertSupportedSavedVariablesSchema(database);
+    } catch (error) {
+      skippedFiles += 1;
+      log(`Skipping unreadable Guildweaver SavedVariables ${filePath}: ${error.message}`);
+      continue;
+    }
+
     const outbound = outboundCharacters(database);
 
     for (const [characterKey, envelope] of Object.entries(outbound)) {
@@ -188,6 +256,46 @@ export async function syncOnce(
         `Synced ${name}${level} revision ${revision}` +
           (result?.status ? ` (${result.status})` : ""),
       );
+    }
+
+    for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
+      telemetryDiscovered += 1;
+      let record;
+
+      try {
+        record = normalizeTelemetryRecord(streamKey, rawRecord);
+      } catch (error) {
+        telemetrySkipped += 1;
+        log(`Skipping malformed telemetry ${streamKey}: ${error.message}`);
+        continue;
+      }
+
+      const key = stateKey(filePath, `telemetry:${record.streamKey}`);
+      const previousRevision = Number(state.sentTelemetryRevisions[key]) || 0;
+
+      if (previousRevision >= record.revision) {
+        telemetrySkipped += 1;
+        continue;
+      }
+
+      if (!config.telemetryEndpoint) {
+        telemetryDeferred += 1;
+        continue;
+      }
+
+      try {
+        const result = await postTelemetry(config, record, fetchImpl);
+        state.sentTelemetryRevisions[key] = record.revision;
+        writeState(config.statePath, state);
+        telemetrySent += 1;
+        log(
+          `Synced telemetry ${record.envelope.eventType} revision ${record.revision}` +
+            (result?.status ? ` (${result.status})` : ""),
+        );
+      } catch (error) {
+        telemetryFailed += 1;
+        log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
+      }
     }
 
     for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
@@ -272,9 +380,15 @@ export async function syncOnce(
 
   return {
     files: files.length,
+    skippedFiles,
     discovered,
     sent,
     skipped,
+    telemetryDiscovered,
+    telemetrySent,
+    telemetrySkipped,
+    telemetryDeferred,
+    telemetryFailed,
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
