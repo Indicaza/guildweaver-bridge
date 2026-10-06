@@ -17,6 +17,12 @@ Each stream contains only its newest snapshot revision:
 
 This keeps SavedVariables bounded. Snapshot captures that have not materially changed do not create a new revision.
 
+Current state stream families include:
+
+- `character_snapshot:<characterId>`
+- `profession_snapshot:<characterId>`
+- `recipe_catalog_snapshot:<characterId>:<professionKey>`
+
 ## Envelope schema 1
 
 Every generic record uses:
@@ -32,7 +38,7 @@ Every generic record uses:
 - optional anonymous `guildId`
 - `payload`
 
-The first event type is `character_snapshot`. The envelope is deliberately open to future event types such as `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `profession_snapshot`, `gathering_loot`, `vendor_seen`, and `boss_killed` without changing the bridge parser.
+The generic parser intentionally accepts new event types without a bridge release. State streams currently include `character_snapshot`, `profession_snapshot`, and `recipe_catalog_snapshot`; future event families can include `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `gathering_loot`, `vendor_seen`, and `boss_killed`.
 
 ## Transport
 
@@ -69,11 +75,13 @@ The idempotency key is stable for the same stream revision. The bridge only reco
 
 When `telemetryEndpoint` is absent, generic records remain deferred and unacknowledged while the existing website character sync continues normally.
 
-## Shared fixture
+## Shared fixtures
 
-`fixtures/telemetry/character_snapshot.v1.json` is the canonical sample payload for website/collector development. It includes equipment, an active talent tree, profession skill data, and a known recipe with reagents.
+`fixtures/telemetry/character_snapshot.v1.json` is the canonical rich character sample payload for website/collector development. It includes equipment, an active talent tree, profession skill data, and a known recipe with reagents.
 
-`fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture.
+`fixtures/telemetry/profession_snapshot.v1.json` verifies that sparse profession slots, skill/max-skill/modifier state, and recipe coverage metadata survive generic bridge normalization unchanged.
+
+`fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture for the character state path.
 
 ## Privacy exclusions
 
@@ -94,6 +102,7 @@ World of Warcraft: Forever exposes a mixture of modern and legacy APIs. Collecti
 - modern talent data uses `C_ClassTalents` and `C_Traits` when available; legacy talent APIs are used as a fallback
 - tree positions, visible edges, conditions, currency/point counts, definition ids, spell ids, and icons are omitted when the client does not expose them
 - profession specialization metadata is collected only when `C_ProfSpecs`/trait config APIs are present
+- profession state is enumerated by explicit return position so nil gaps in `GetProfessions()` do not hide later secondary professions
 - full recipe catalogs are only available while the profession/tradeskill APIs expose them, normally after the player opens the relevant profession UI
 - recipe collection never opens a profession UI automatically and previously captured recipes are retained between ordinary character snapshots
 - some item metadata depends on the local item cache; item id/link and parsed link modifiers remain available even when richer cached metadata is temporarily missing
