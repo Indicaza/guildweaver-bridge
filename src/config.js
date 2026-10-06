@@ -57,7 +57,9 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
   const configuredLaunchAgentPath = parsed.launchAgentPath
     ? path.resolve(parsed.launchAgentPath)
     : defaultLaunchAgentPath();
+  const holdfastEnabled = parsed.holdfastEnabled !== false;
   const config = {
+    holdfastEnabled,
     holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
     telemetryEndpoint: parsed.telemetryEndpoint
       ? normalizeUrl(parsed.telemetryEndpoint)
@@ -100,8 +102,8 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     configPath: fs.existsSync(resolved) ? resolved : null,
   };
 
-  if (!config.holdfastUrl) {
-    throw new Error("holdfastUrl is required");
+  if (config.holdfastEnabled && !config.holdfastUrl) {
+    throw new Error("holdfastUrl is required when Holdfast integration is enabled");
   }
 
   if (config.pollIntervalMs < 1000) {
