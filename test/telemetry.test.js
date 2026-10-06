@@ -29,6 +29,13 @@ const inventoryEnvelope = JSON.parse(
   ),
 );
 
+const auctionEnvelope = JSON.parse(
+  fs.readFileSync(
+    new URL("../fixtures/telemetry/auction_observation.v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
 test("normalizes the shared character telemetry fixture", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
     revision: 4,
@@ -90,6 +97,27 @@ test("passes carried inventory state through the generic transport unchanged", (
   const body = telemetryTransportBody(record);
   assert.equal(body.streamKey, "inventory_snapshot:fixture");
   assert.deepEqual(body.envelope.payload, inventoryEnvelope.payload);
+});
+
+test("passes passive auction observations through the generic transport unchanged", () => {
+  const record = normalizeTelemetryRecord("event:auction-fixture", {
+    revision: 1,
+    updatedAt: auctionEnvelope.capturedAt,
+    envelope: auctionEnvelope,
+  });
+
+  assert.equal(record.envelope.eventType, "auction_observation");
+  assert.equal(record.envelope.payload.mode, "commodity_search");
+  assert.equal(record.envelope.payload.query.itemId, 765);
+  assert.equal(record.envelope.payload.rows.length, 2);
+  assert.equal(record.envelope.payload.rows[0].unitPrice, 3100);
+  assert.equal(record.envelope.payload.rows[1].quantity, 20);
+  assert.equal(record.envelope.payload.rows[0].owner, undefined);
+  assert.equal(record.envelope.payload.rows[0].bidder, undefined);
+
+  const body = telemetryTransportBody(record);
+  assert.equal(body.streamKey, "event:auction-fixture");
+  assert.deepEqual(body.envelope.payload, auctionEnvelope.payload);
 });
 
 test("produces a stable idempotency key for the same stream revision", () => {
