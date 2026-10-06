@@ -28,6 +28,7 @@ import {
 import { clearCredentials, ensurePaired } from "./pairing.js";
 import { updateBridgeSource } from "./sourceUpdater.js";
 import { syncOnce } from "./sync.js";
+import { readTelemetryCredentials } from "./telemetryCredentials.js";
 
 const platformBackground =
   process.platform === "linux"
@@ -257,9 +258,13 @@ async function main() {
 
   const pairRuntime = async () => {
     credentials = await ensurePaired(config);
+    const telemetryCredentials = readTelemetryCredentials(
+      config.telemetryCredentialsPath,
+    );
     runtimeConfig = {
       ...config,
       deviceToken: credentials.deviceToken,
+      telemetryToken: telemetryCredentials?.telemetryToken || null,
     };
   };
 
