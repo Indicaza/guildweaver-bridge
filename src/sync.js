@@ -200,6 +200,7 @@ export async function syncOnce(
 ) {
   const files = findSavedVariablesFiles(config);
   const state = readState(config.statePath);
+  const holdfastEnabled = config.holdfastEnabled !== false;
   const pendingQuestActions = new Map();
   const currentQuestActionIds = new Set();
   let discovered = 0;
@@ -225,38 +226,40 @@ export async function syncOnce(
       continue;
     }
 
-    const outbound = outboundCharacters(database);
+    if (holdfastEnabled) {
+      const outbound = outboundCharacters(database);
 
-    for (const [characterKey, envelope] of Object.entries(outbound)) {
-      discovered += 1;
-      const revision = Number(envelope?.revision);
-      const snapshot = envelope?.payload;
+      for (const [characterKey, envelope] of Object.entries(outbound)) {
+        discovered += 1;
+        const revision = Number(envelope?.revision);
+        const snapshot = envelope?.payload;
 
-      if (!Number.isFinite(revision) || revision < 1 || !snapshot) {
-        log(`Skipping malformed outbound snapshot ${characterKey}`);
-        skipped += 1;
-        continue;
+        if (!Number.isFinite(revision) || revision < 1 || !snapshot) {
+          log(`Skipping malformed outbound snapshot ${characterKey}`);
+          skipped += 1;
+          continue;
+        }
+
+        const key = stateKey(filePath, characterKey);
+        const previousRevision = Number(state.sentRevisions[key]) || 0;
+
+        if (previousRevision >= revision) {
+          skipped += 1;
+          continue;
+        }
+
+        const result = await postSnapshot(config, envelope, fetchImpl);
+        state.sentRevisions[key] = revision;
+        writeState(config.statePath, state);
+        sent += 1;
+
+        const name = snapshot.name || characterKey;
+        const level = snapshot.level ? ` level ${snapshot.level}` : "";
+        log(
+          `Synced ${name}${level} revision ${revision}` +
+            (result?.status ? ` (${result.status})` : ""),
+        );
       }
-
-      const key = stateKey(filePath, characterKey);
-      const previousRevision = Number(state.sentRevisions[key]) || 0;
-
-      if (previousRevision >= revision) {
-        skipped += 1;
-        continue;
-      }
-
-      const result = await postSnapshot(config, envelope, fetchImpl);
-      state.sentRevisions[key] = revision;
-      writeState(config.statePath, state);
-      sent += 1;
-
-      const name = snapshot.name || characterKey;
-      const level = snapshot.level ? ` level ${snapshot.level}` : "";
-      log(
-        `Synced ${name}${level} revision ${revision}` +
-          (result?.status ? ` (${result.status})` : ""),
-      );
     }
 
     for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
@@ -299,26 +302,28 @@ export async function syncOnce(
       }
     }
 
-    for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
-      currentQuestActionIds.add(actionId);
-      if (state.questActions[actionId]) continue;
+    if (holdfastEnabled) {
+      for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
+        currentQuestActionIds.add(actionId);
+        if (state.questActions[actionId]) continue;
 
-      if (!validQuestAction(action)) {
-        state.questActions[actionId] = {
-          status: "rejected",
-          error: "invalid_local_quest_action",
-          updatedAt: now(),
-        };
-        continue;
+        if (!validQuestAction(action)) {
+          state.questActions[actionId] = {
+            status: "rejected",
+            error: "invalid_local_quest_action",
+            updatedAt: now(),
+          };
+          continue;
+        }
+
+        pendingQuestActions.set(actionId, action);
       }
-
-      pendingQuestActions.set(actionId, action);
     }
   }
 
   let questActionsSent = 0;
 
-  if (pendingQuestActions.size > 0) {
+  if (holdfastEnabled && pendingQuestActions.size > 0) {
     const results = await postQuestActions(
       config,
       [...pendingQuestActions.values()],
@@ -346,16 +351,19 @@ export async function syncOnce(
     writeState(config.statePath, state);
   }
 
-  for (const actionId of Object.keys(state.questActions)) {
-    if (!currentQuestActionIds.has(actionId)) {
-      delete state.questActions[actionId];
+  if (holdfastEnabled) {
+    for (const actionId of Object.keys(state.questActions)) {
+      if (!currentQuestActionIds.has(actionId)) {
+        delete state.questActions[actionId];
+      }
     }
   }
 
   const timestamp = now();
   const questSyncDue =
-    questActionsSent > 0 ||
-    timestamp - state.lastQuestSyncAt >= config.questSyncIntervalMs;
+    holdfastEnabled &&
+    (questActionsSent > 0 ||
+      timestamp - state.lastQuestSyncAt >= config.questSyncIntervalMs);
   let questSnapshotUpdated = false;
 
   if (questSyncDue) {
