@@ -1,3 +1,3 @@
 module github.com/Indicaza/guildweaver-bridge/installer
 
-go 1.22
+go 1.26.0
