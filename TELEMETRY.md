@@ -36,8 +36,6 @@ The first event type is `character_snapshot`. The envelope is deliberately open 
 
 ## Transport
 
-The bridge continues to POST character snapshots to the existing paired website character endpoint for backward compatibility.
-
 Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. When configured, the bridge sends:
 
 ```json
@@ -61,13 +59,55 @@ Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. When
 
 Headers:
 
-- `Authorization: Bearer <paired device credential>`
+- `Authorization: Bearer <collector-scoped telemetry credential>`
 - `Content-Type: application/json`
 - `Idempotency-Key: gw-<sha256>`
 
-The idempotency key is stable for the same stream revision. The bridge only records a telemetry revision as sent after a successful HTTP response. Network/server failures leave the record queued for the next polling cycle. A collector should also enforce idempotency server-side because reinstalling or moving a SavedVariables file can legitimately cause a client retry.
+The collector credential is independent from Holdfast pairing and is stored in the bridge application-data directory as `telemetry-credentials.json` by default. It uses a separate schema so a future collector bootstrap/pairing flow can rotate or revoke telemetry access without changing Holdfast membership credentials.
 
-When `telemetryEndpoint` is absent, generic records remain deferred and unacknowledged while the existing website character sync continues normally.
+For compatibility during the transition, a configured generic endpoint falls back to the existing Holdfast device token when no collector credential exists. New collector deployments should issue their own installation-scoped telemetry credential instead of relying on that fallback.
+
+The idempotency key is stable for the same stream revision. The bridge only records a telemetry revision as sent after a successful HTTP response. Network/server/auth failures leave the record queued for the next polling cycle. A collector should also enforce idempotency server-side because reinstalling or moving a SavedVariables file can legitimately cause a client retry.
+
+When `telemetryEndpoint` is absent, generic records remain deferred and unacknowledged.
+
+## Holdfast as an optional consumer
+
+Holdfast integration remains enabled by default for existing Guildweaver installations. In that mode the bridge continues to:
+
+- pair with Holdfast
+- send the backward-compatible character snapshot transport
+- submit quest actions
+- receive Holdfast-owned quest snapshots
+
+A generic collector deployment can disable all Holdfast traffic:
+
+```json
+{
+  "holdfastEnabled": false,
+  "telemetryEndpoint": "https://collector.example/v1/telemetry"
+}
+```
+
+In collector-only mode the bridge does not require Holdfast/Discord pairing and does not call Holdfast character or quest APIs. Addon installation, SavedVariables discovery, generic telemetry delivery, automatic addon updates, bridge self-updates, and Windows/macOS/Linux background behavior remain available.
+
+This allows Holdfast to remain one optional consumer of Guildweaver rather than the identity or transport authority for the shared data platform.
+
+## Collector credential file
+
+The private telemetry credential file uses schema 1:
+
+```json
+{
+  "schemaVersion": 1,
+  "telemetryToken": "collector-issued-secret",
+  "collectorId": "optional-collector-id",
+  "installationId": "optional-installation-id",
+  "issuedAt": "2026-10-06T04:00:00.000Z"
+}
+```
+
+It is stored separately from Holdfast pairing credentials with restrictive file permissions where the platform supports them. The current bridge includes the read/write contract; automatic collector enrollment is intentionally left for the collector service slice.
 
 ## Shared fixture
 
