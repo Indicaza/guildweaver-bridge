@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "eventType": "inventory_snapshot",
+  "capturedAt": 1791247000,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "60001",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-6ac2d704-1234abcd-5678ef90",
+  "characterId": "character-6ac2d704-aabbccdd-11223344",
+  "guildId": "guild-54b013a2",
+  "payload": {
+    "schemaVersion": 1,
+    "capturedAt": 1791247000,
+    "reason": "BAG_UPDATE_DELAYED",
+    "scope": "carried_bags",
+    "excludes": ["gold", "bank", "mail", "auction_house"],
+    "bags": [
+      { "bag": 0, "slots": 16, "used": 12, "free": 4 },
+      { "bag": 1, "slots": 8, "used": 5, "free": 3 }
+    ],
+    "items": [
+      {
+        "itemId": 765,
+        "itemLink": "|cffffffff|Hitem:765::::::::30:::::::|h[Silverleaf]|h|r",
+        "icon": 134190,
+        "quality": 1,
+        "count": 5,
+        "stacks": 1,
+        "boundCount": 0,
+        "unboundCount": 5
+      },
+      {
+        "itemId": 2840,
+        "itemLink": "|cffffffff|Hitem:2840::::::::30:::::::|h[Copper Bar]|h|r",
+        "icon": 133216,
+        "quality": 1,
+        "count": 11,
+        "stacks": 2,
+        "boundCount": 3,
+        "unboundCount": 8
+      }
+    ]
+  }
+}
