@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "eventType": "character_snapshot",
+  "capturedAt": 1791242820,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "60001",
+    "buildDate": "Oct 5 2026",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-6ac2d704-1234abcd-5678ef90",
+  "characterId": "character-6ac2d704-aabbccdd-11223344",
+  "guildId": "guild-54b013a2",
+  "payload": {
+    "schemaVersion": 2,
+    "capturedAt": 1791242820,
+    "reason": "PLAYER_EQUIPMENT_CHANGED",
+    "addonVersion": "0.5.0-alpha.1",
+    "characterKey": "classic beta pve 2:rook",
+    "characterId": "character-6ac2d704-aabbccdd-11223344",
+    "name": "Rook",
+    "realm": "Classic Beta PvE 2",
+    "region": "US",
+    "level": 30,
+    "sex": 2,
+    "bodyType": "male",
+    "race": {
+      "name": "Night Elf",
+      "file": "NightElf",
+      "id": 4
+    },
+    "class": {
+      "name": "Warrior",
+      "file": "WARRIOR",
+      "id": 1
+    },
+    "guild": {
+      "name": "Example Guild",
+      "rankName": "Member",
+      "rankIndex": 5,
+      "realm": "Classic Beta PvE 2"
+    },
+    "specialization": {
+      "index": 1,
+      "id": 71,
+      "name": "Arms",
+      "icon": 132355,
+      "role": "DAMAGER"
+    },
+    "talents": {
+      "api": "traits",
+      "kind": "combat",
+      "configId": 10001,
+      "name": "Arms",
+      "treeIds": [20001],
+      "pointsSpent": 10,
+      "pointsAvailable": 1,
+      "currencies": [
+        {
+          "treeId": 20001,
+          "traitCurrencyId": 30001,
+          "quantity": 1,
+          "maxQuantity": 11,
+          "spent": 10,
+          "spentInTree": 10
+        }
+      ],
+      "trees": [
+        {
+          "id": 20001,
+          "rootNodeId": 40001,
+          "nodes": [
+            {
+              "id": 40001,
+              "position": {
+                "x": 540,
+                "y": 90
+              },
+              "activeRank": 1,
+              "currentRank": 1,
+              "ranksPurchased": 1,
+              "maxRanks": 1,
+              "isAvailable": true,
+              "isVisible": true,
+              "meetsEdgeRequirements": true,
+              "conditionIds": [],
+              "entries": [
+                {
+                  "id": 50001,
+                  "definitionId": 60001,
+                  "spellId": 70001,
+                  "icon": 132333,
+                  "name": "Example Talent",
+                  "maxRanks": 1,
+                  "selected": true,
+                  "rank": 1,
+                  "isAvailable": true
+                }
+              ]
+            }
+          ],
+          "edges": []
+        }
+      ]
+    },
+    "professions": [
+      {
+        "id": 164,
+        "name": "Blacksmithing",
+        "kind": "primary",
+        "icon": 136241,
+        "skillLevel": 150,
+        "maxSkillLevel": 150,
+        "skillLineId": 164,
+        "skillModifier": 5,
+        "skillLineName": "Blacksmithing",
+        "specialization": {
+          "configId": 81001,
+          "name": "Blacksmithing",
+          "treeIds": [82001]
+        },
+        "recipeSnapshotAt": 1791242800,
+        "recipeSource": "C_TradeSkillUI",
+        "recipes": [
+          {
+            "id": 1001,
+            "name": "Copper Bracers",
+            "known": true,
+            "icon": 132604,
+            "professionId": 164,
+            "professionName": "Blacksmithing",
+            "skillLineAbilityId": 90001,
+            "relativeDifficulty": 2,
+            "maxTrivialLevel": 25,
+            "craftedItemId": 2853,
+            "craftedItemLink": "|cff1eff00|Hitem:2853::::::::30:::::::|h[Copper Bracers]|h|r",
+            "reagents": [
+              {
+                "slotIndex": 1,
+                "quantityRequired": 2,
+                "required": true,
+                "reagents": [
+                  {
+                    "itemId": 2840,
+                    "quantityRequired": 2
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "slot": "MainHandSlot",
+        "slotId": 16,
+        "itemId": 5191,
+        "itemLink": "|cff0070dd|Hitem:5191:17:0:0:0:0:0:0:30:::::::|h[Cruel Barb]|h|r",
+        "itemString": "item:5191:17:0:0:0:0:0:0:30:::::::",
+        "quality": 3,
+        "itemLevel": 24,
+        "icon": 135324,
+        "enchantId": 17,
+        "gemIds": [],
+        "bonusIds": [],
+        "modifierData": [5191, 17, 0, 0, 0, 0, 0, 0, 30],
+        "name": "Cruel Barb",
+        "requiredLevel": 19,
+        "class": "Weapon",
+        "subclass": "One-Handed Swords",
+        "classId": 2,
+        "subclassId": 7,
+        "equipLocation": "INVTYPE_WEAPON"
+      }
+    ]
+  }
+}

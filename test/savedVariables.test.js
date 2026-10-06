@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
-import { outboundCharacters, parseSavedVariables } from "../src/savedVariables.js";
+import {
+  assertSupportedSavedVariablesSchema,
+  outboundCharacters,
+  outboundTelemetry,
+  parseSavedVariables,
+  savedVariablesSchemaVersion,
+} from "../src/savedVariables.js";
 
 const fixture = `
 GuildweaverDB = {
@@ -39,12 +46,18 @@ GuildweaverDB = {
 }
 `;
 
-test("parses Guildweaver SavedVariables without executing Lua", () => {
+const schema4Fixture = fs.readFileSync(
+  new URL("../fixtures/savedvariables/schema4.lua", import.meta.url),
+  "utf8",
+);
+
+test("parses legacy Guildweaver SavedVariables without executing Lua", () => {
   const database = parseSavedVariables(fixture);
   const outbound = outboundCharacters(database);
   const envelope = outbound["classic beta pve 2:rook"];
 
-  assert.equal(database.schemaVersion, 2);
+  assert.equal(savedVariablesSchemaVersion(database), 2);
+  assert.equal(assertSupportedSavedVariablesSchema(database), 2);
   assert.equal(envelope.revision, 7);
   assert.equal(envelope.payload.name, "Rook");
   assert.equal(envelope.payload.class.name, "Warrior");
@@ -52,6 +65,34 @@ test("parses Guildweaver SavedVariables without executing Lua", () => {
   assert.deepEqual(
     envelope.payload.professions.map((profession) => profession.name),
     ["Mining", "Blacksmithing"],
+  );
+  assert.deepEqual(outboundTelemetry(database), {});
+});
+
+test("parses SavedVariables schema 4 generic telemetry", () => {
+  const database = parseSavedVariables(schema4Fixture);
+  const telemetry = outboundTelemetry(database);
+  const record = telemetry["character_snapshot:character-fixture"];
+
+  assert.equal(savedVariablesSchemaVersion(database), 4);
+  assert.equal(assertSupportedSavedVariablesSchema(database), 4);
+  assert.equal(record.revision, 3);
+  assert.equal(record.envelope.schemaVersion, 1);
+  assert.equal(record.envelope.eventType, "character_snapshot");
+  assert.equal(record.envelope.installationId, "install-fixture");
+  assert.equal(record.envelope.payload.name, "Rook");
+});
+
+test("accepts pre-versioned legacy SavedVariables", () => {
+  const database = parseSavedVariables("GuildweaverDB = { [\"characters\"] = {} }");
+  assert.equal(savedVariablesSchemaVersion(database), 0);
+  assert.equal(assertSupportedSavedVariablesSchema(database), 0);
+});
+
+test("rejects future SavedVariables schemas cleanly", () => {
+  assert.throws(
+    () => assertSupportedSavedVariablesSchema({ schemaVersion: 999 }),
+    /Unsupported Guildweaver SavedVariables schema 999/,
   );
 });
 

@@ -1,3 +1,5 @@
+const SUPPORTED_SAVED_VARIABLES_SCHEMA = 4;
+
 class LuaReader {
   constructor(source) {
     this.source = source;
@@ -255,6 +257,23 @@ export function parseSavedVariables(source, variableName = "GuildweaverDB") {
   return reader.value();
 }
 
+export function savedVariablesSchemaVersion(database) {
+  const version = Number(database?.schemaVersion);
+  return Number.isInteger(version) && version >= 1 ? version : 0;
+}
+
+export function assertSupportedSavedVariablesSchema(database) {
+  const version = savedVariablesSchemaVersion(database);
+
+  if (version > SUPPORTED_SAVED_VARIABLES_SCHEMA) {
+    throw new Error(
+      `Unsupported Guildweaver SavedVariables schema ${version}; bridge supports through ${SUPPORTED_SAVED_VARIABLES_SCHEMA}`,
+    );
+  }
+
+  return version;
+}
+
 export function outboundCharacters(database) {
   const characters = database?.sync?.outbound?.characters;
 
@@ -263,4 +282,14 @@ export function outboundCharacters(database) {
   }
 
   return characters;
+}
+
+export function outboundTelemetry(database) {
+  const telemetry = database?.sync?.outbound?.telemetry;
+
+  if (!telemetry || typeof telemetry !== "object" || Array.isArray(telemetry)) {
+    return {};
+  }
+
+  return telemetry;
 }
