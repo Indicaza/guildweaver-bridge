@@ -59,6 +59,9 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     : defaultLaunchAgentPath();
   const config = {
     holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
+    telemetryEndpoint: parsed.telemetryEndpoint
+      ? normalizeUrl(parsed.telemetryEndpoint)
+      : null,
     wowRoot: parsed.wowRoot ? path.resolve(parsed.wowRoot) : null,
     savedVariablesPath: parsed.savedVariablesPath
       ? path.resolve(parsed.savedVariablesPath)
