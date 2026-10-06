@@ -15,7 +15,7 @@ const envelope = JSON.parse(
   ),
 );
 
-test("normalizes the shared character telemetry fixture", () => {
+test("passes normalized character schema v3 through without domain-specific rewriting", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
     kind: "state",
     revision: 4,
@@ -27,15 +27,58 @@ test("normalizes the shared character telemetry fixture", () => {
   assert.equal(record.revision, 4);
   assert.equal(record.envelope.schemaVersion, 1);
   assert.equal(record.envelope.eventType, "character_snapshot");
+  assert.equal(record.envelope.payload.schemaVersion, 3);
   assert.equal(record.envelope.payload.name, "Rook");
+  assert.equal(record.envelope.payload.class.token, "WARRIOR");
   assert.equal(record.envelope.payload.equipment[0].itemId, 5191);
-  assert.equal(record.envelope.payload.professions[0].recipes[0].id, 1001);
+  assert.equal(record.envelope.payload.equipment[0].iconFileDataId, 135324);
+  assert.equal(record.envelope.payload.equipment[0].qualityId, 3);
+  assert.equal(record.envelope.payload.talents.allocations[0].activeEntryId, 50001);
+  assert.equal(record.envelope.payload.professions[0].recipes[0].recipeId, 1001);
 
   const body = telemetryTransportBody(record);
   assert.equal(body.streamKey, "character_snapshot:fixture");
   assert.equal(body.kind, "state");
   assert.equal(body.revision, 4);
-  assert.deepEqual(body.envelope, record.envelope);
+  assert.deepEqual(body.envelope, envelope);
+});
+
+test("passes generic definition streams through unchanged", () => {
+  const definitionEnvelope = {
+    schemaVersion: 1,
+    eventType: "talent_tree_definition",
+    capturedAt: 1791242820,
+    gameBuild: envelope.gameBuild,
+    installationId: envelope.installationId,
+    payload: {
+      schemaVersion: 1,
+      class: { id: 1, name: "Warrior", token: "WARRIOR" },
+      treeId: 20001,
+      nodes: [
+        {
+          nodeId: 40001,
+          entries: [
+            {
+              entryId: 50001,
+              spellId: 70001,
+              iconFileDataId: 132333,
+            },
+          ],
+        },
+      ],
+      edges: [],
+    },
+  };
+
+  const record = normalizeTelemetryRecord("talent_tree_definition:warrior:70235:20001", {
+    kind: "state",
+    revision: 1,
+    envelope: definitionEnvelope,
+  });
+
+  assert.equal(record.envelope.eventType, "talent_tree_definition");
+  assert.equal(record.envelope.payload.nodes[0].entries[0].spellId, 70001);
+  assert.deepEqual(record.envelope.payload, definitionEnvelope.payload);
 });
 
 test("defaults legacy telemetry records to state", () => {
