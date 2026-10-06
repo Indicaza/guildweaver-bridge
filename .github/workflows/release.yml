@@ -311,8 +311,142 @@ jobs:
             dist/GuildweaverBridge-linux-${{ matrix.arch }}.zip.sha256
           retention-days: 7
 
+  windows-installer:
+    needs: metadata
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Build Windows installer
+        shell: pwsh
+        env:
+          CHANNEL: ${{ needs.metadata.outputs.channel }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Push-Location installer
+          go test ./...
+          go build -trimpath -ldflags="-s -w -H=windowsgui -X=main.releaseChannel=$env:CHANNEL" -o ../dist/GuildweaverInstaller.exe .
+          Pop-Location
+          if ((Get-Item 'dist/GuildweaverInstaller.exe').Length -le 0) { throw 'Windows installer was empty' }
+          $hash = (Get-FileHash 'dist/GuildweaverInstaller.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $hash | Set-Content 'dist/GuildweaverInstaller.exe.sha256' -Encoding ascii
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: guildweaver-installer-windows
+          path: |
+            dist/GuildweaverInstaller.exe
+            dist/GuildweaverInstaller.exe.sha256
+          retention-days: 7
+
+  macos-installer:
+    needs: metadata
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
+      - name: Build universal macOS installer
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.metadata.outputs.channel }}
+          BRIDGE_VERSION: ${{ needs.metadata.outputs.bridge_version }}
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist installer-build
+
+          (
+            cd installer
+            go test ./...
+            CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w -X=main.releaseChannel=${CHANNEL}" -o ../installer-build/GuildweaverInstaller-amd64 .
+            CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w -X=main.releaseChannel=${CHANNEL}" -o ../installer-build/GuildweaverInstaller-arm64 .
+          )
+
+          /usr/bin/lipo -create \
+            installer-build/GuildweaverInstaller-amd64 \
+            installer-build/GuildweaverInstaller-arm64 \
+            -output installer-build/GuildweaverInstaller
+          chmod 755 installer-build/GuildweaverInstaller
+          /usr/bin/lipo -info installer-build/GuildweaverInstaller
+
+          payload="$PWD/installer-build/pkgroot"
+          scripts="$PWD/installer-build/scripts"
+          mkdir -p "$payload/private/tmp/guildweaver-installer" "$scripts"
+          cp installer-build/GuildweaverInstaller "$payload/private/tmp/guildweaver-installer/GuildweaverInstaller"
+
+          cat > "$scripts/postinstall" <<'POSTINSTALL'
+          #!/bin/sh
+          set -eu
+
+          console_user="$(/usr/bin/stat -f '%Su' /dev/console)"
+          if [ -z "$console_user" ] || [ "$console_user" = "root" ] || [ "$console_user" = "loginwindow" ]; then
+            echo "Guildweaver requires a signed-in macOS user." >&2
+            exit 1
+          fi
+
+          uid="$(/usr/bin/id -u "$console_user")"
+          user_home="$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory | /usr/bin/awk '{print $2}')"
+          log_dir="$user_home/Library/Logs"
+          log_path="$log_dir/GuildweaverInstaller.log"
+          bootstrap="/private/tmp/guildweaver-installer/GuildweaverInstaller"
+
+          /bin/mkdir -p "$log_dir"
+          /usr/sbin/chown "$console_user" "$log_dir"
+
+          /bin/launchctl asuser "$uid" /usr/bin/sudo -u "$console_user" \
+            /usr/bin/env HOME="$user_home" USER="$console_user" LOGNAME="$console_user" \
+            "$bootstrap" >>"$log_path" 2>&1
+
+          /bin/rm -rf /private/tmp/guildweaver-installer
+          exit 0
+          POSTINSTALL
+          chmod 755 "$scripts/postinstall"
+
+          pkg_version="${BRIDGE_VERSION%%-*}"
+          /usr/bin/pkgbuild \
+            --root "$payload" \
+            --scripts "$scripts" \
+            --identifier com.holdfast.guildweaver.installer \
+            --version "$pkg_version" \
+            --install-location / \
+            dist/GuildweaverInstaller-macos.pkg
+
+          /usr/sbin/pkgutil --payload-files dist/GuildweaverInstaller-macos.pkg | grep -q 'private/tmp/guildweaver-installer/GuildweaverInstaller'
+          shasum -a 256 dist/GuildweaverInstaller-macos.pkg | awk '{print $1}' > dist/GuildweaverInstaller-macos.pkg.sha256
+
+      - name: Upload macOS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: guildweaver-installer-macos
+          path: |
+            dist/GuildweaverInstaller-macos.pkg
+            dist/GuildweaverInstaller-macos.pkg.sha256
+          retention-days: 7
+
   release:
-    needs: [metadata, windows-package, macos-package, linux-package]
+    needs:
+      - metadata
+      - windows-package
+      - macos-package
+      - linux-package
+      - windows-installer
+      - macos-installer
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -321,7 +455,7 @@ jobs:
       - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: guildweaver-bridge-*
+          pattern: guildweaver-*
           path: dist
           merge-multiple: true
 
@@ -349,6 +483,16 @@ jobs:
             bridgeProtocol: 2,
             artifact: 'GuildweaverBridge.zip',
             checksum: 'GuildweaverBridge.zip.sha256',
+            installers: {
+              windows: {
+                artifact: 'GuildweaverInstaller.exe',
+                checksum: 'GuildweaverInstaller.exe.sha256',
+              },
+              macos: {
+                artifact: 'GuildweaverInstaller-macos.pkg',
+                checksum: 'GuildweaverInstaller-macos.pkg.sha256',
+              },
+            },
             packages: {
               'win32-x64': {
                 artifact: 'GuildweaverBridge.zip',
@@ -385,6 +529,10 @@ jobs:
           test -s dist/GuildweaverBridge-linux-x64.zip.sha256
           test -s dist/GuildweaverBridge-linux-arm64.zip
           test -s dist/GuildweaverBridge-linux-arm64.zip.sha256
+          test -s dist/GuildweaverInstaller.exe
+          test -s dist/GuildweaverInstaller.exe.sha256
+          test -s dist/GuildweaverInstaller-macos.pkg
+          test -s dist/GuildweaverInstaller-macos.pkg.sha256
           test -s dist/release.json
 
       - name: Upload combined release artifact
@@ -403,6 +551,10 @@ jobs:
           set -euo pipefail
           gh release delete edge --cleanup-tag --yes >/dev/null 2>&1 || true
           gh release create edge \
+            dist/GuildweaverInstaller.exe \
+            dist/GuildweaverInstaller.exe.sha256 \
+            dist/GuildweaverInstaller-macos.pkg \
+            dist/GuildweaverInstaller-macos.pkg.sha256 \
             dist/GuildweaverBridge.zip \
             dist/GuildweaverBridge.zip.sha256 \
             dist/GuildweaverBridge-macos-x64.zip \
@@ -428,6 +580,10 @@ jobs:
           set -euo pipefail
           args=(
             "${{ needs.metadata.outputs.release_tag }}"
+            dist/GuildweaverInstaller.exe
+            dist/GuildweaverInstaller.exe.sha256
+            dist/GuildweaverInstaller-macos.pkg
+            dist/GuildweaverInstaller-macos.pkg.sha256
             dist/GuildweaverBridge.zip
             dist/GuildweaverBridge.zip.sha256
             dist/GuildweaverBridge-macos-x64.zip
@@ -456,6 +612,10 @@ jobs:
           gh release delete "$channel" --cleanup-tag --yes >/dev/null 2>&1 || true
           args=(
             "$channel"
+            dist/GuildweaverInstaller.exe
+            dist/GuildweaverInstaller.exe.sha256
+            dist/GuildweaverInstaller-macos.pkg
+            dist/GuildweaverInstaller-macos.pkg.sha256
             dist/GuildweaverBridge.zip
             dist/GuildweaverBridge.zip.sha256
             dist/GuildweaverBridge-macos-x64.zip
