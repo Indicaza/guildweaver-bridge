@@ -28,6 +28,9 @@ import {
 import { clearCredentials, ensurePaired } from "./pairing.js";
 import { updateBridgeSource } from "./sourceUpdater.js";
 import { syncOnce } from "./sync.js";
+import { isWowRunning } from "./wowProcess.js";
+
+const WOW_PROCESS_POLL_INTERVAL_MS = 5000;
 
 const platformBackground =
   process.platform === "linux"
@@ -312,38 +315,73 @@ async function main() {
   console.log(`Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms.`);
 
   await new Promise((resolve) => {
-    let bridgeUpdateInFlight = false;
+    let stopping = false;
+    let bridgeUpdatePromise = null;
+    let wowWasRunning = isWowRunning();
+    let bridgeUpdateTimer = null;
+    let wowProcessTimer = null;
+
     const syncTimer = setInterval(run, config.pollIntervalMs);
     const addonUpdateTimer = setInterval(updateAddon, config.addonUpdateIntervalMs);
 
-    const stop = () => {
+    const clearWatchTimers = () => {
       clearInterval(syncTimer);
       clearInterval(addonUpdateTimer);
-      clearInterval(bridgeUpdateTimer);
-      releaseLock();
-      resolve();
+      if (bridgeUpdateTimer) clearInterval(bridgeUpdateTimer);
+      if (wowProcessTimer) clearInterval(wowProcessTimer);
     };
 
-    const bridgeUpdateTimer = setInterval(async () => {
-      if (bridgeUpdateInFlight) return;
-      bridgeUpdateInFlight = true;
+    const checkBridgeAndRestart = () => {
+      if (stopping) return Promise.resolve(false);
+      if (bridgeUpdatePromise) return bridgeUpdatePromise;
 
-      try {
+      bridgeUpdatePromise = (async () => {
         const result = await checkBridgeUpdate();
         if (
           result?.status === "updated" ||
           result?.status === "package-update-staged"
         ) {
-          clearInterval(syncTimer);
-          clearInterval(addonUpdateTimer);
-          clearInterval(bridgeUpdateTimer);
+          stopping = true;
+          clearWatchTimers();
           restartIntoUpdatedBridge(result);
           resolve();
+          return true;
         }
-      } finally {
-        bridgeUpdateInFlight = false;
-      }
+        return false;
+      })().finally(() => {
+        bridgeUpdatePromise = null;
+      });
+
+      return bridgeUpdatePromise;
+    };
+
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      clearWatchTimers();
+      releaseLock();
+      resolve();
+    };
+
+    bridgeUpdateTimer = setInterval(() => {
+      void checkBridgeAndRestart();
     }, config.bridgeUpdateIntervalMs);
+
+    wowProcessTimer = setInterval(async () => {
+      if (stopping) return;
+
+      const wowRunning = isWowRunning();
+      const justStarted = wowRunning && !wowWasRunning;
+      wowWasRunning = wowRunning;
+
+      if (!justStarted) return;
+
+      console.log("World of Warcraft started; checking Guildweaver updates.");
+      const restarted = await checkBridgeAndRestart();
+      if (!restarted && !stopping) {
+        await updateAddon();
+      }
+    }, WOW_PROCESS_POLL_INTERVAL_MS);
 
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
