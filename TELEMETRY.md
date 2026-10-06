@@ -8,7 +8,7 @@ SavedVariables schema 4 carries two generic outbound telemetry shapes.
 
 ### Latest-state streams
 
-`GuildweaverDB.sync.outbound.telemetry[streamKey]` keeps only the newest revision for state such as characters, professions, and recipe catalogs.
+`GuildweaverDB.sync.outbound.telemetry[streamKey]` keeps only the newest revision for state such as characters, professions, recipe catalogs, and carried inventory.
 
 Each stream contains:
 
@@ -22,6 +22,7 @@ Current state stream families include:
 - `character_snapshot:<characterId>`
 - `profession_snapshot:<characterId>`
 - `recipe_catalog_snapshot:<characterId>:<professionKey>`
+- `inventory_snapshot:<characterId>`
 
 ### Ordered event queue
 
@@ -54,7 +55,15 @@ Every generic record uses:
 - optional anonymous `guildId`
 - `payload`
 
-The generic parser intentionally accepts new event types without a bridge release. State streams currently include `character_snapshot`, `profession_snapshot`, and `recipe_catalog_snapshot`; queued event families can include `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `gathering_loot`, `vendor_seen`, and `boss_killed`.
+The generic parser intentionally accepts new event types without a bridge release. State streams currently include `character_snapshot`, `profession_snapshot`, `recipe_catalog_snapshot`, and `inventory_snapshot`; queued event families now include `loot_observation` and `auction_observation`, with craft, recipe-learning, vendor, boss, and other domains able to reuse the same transport later.
+
+## Auction observations
+
+`auction_observation` is passive market telemetry. The addon records Auction House result sets that the player has already requested; it does not automate queries, purchases, bids, postings, or scans.
+
+The payload can carry browse, commodity-search, item-search, or legacy-list observations with item identifiers, quantities, prices/bids/buyouts, auction/time-left metadata, result counts, truncation state, and query context. Owner and bidder identities are intentionally omitted before the record reaches the bridge.
+
+`fixtures/telemetry/auction_observation.v1.json` is the canonical bridge fixture. Tests verify this market payload survives generic normalization/transport unchanged and contains no seller/bidder identity fields.
 
 ## Transport
 
@@ -99,6 +108,10 @@ When `telemetryEndpoint` is absent, generic state records and events remain defe
 
 `fixtures/telemetry/profession_snapshot.v1.json` verifies that sparse profession slots, skill/max-skill/modifier state, and recipe coverage metadata survive generic bridge normalization unchanged.
 
+`fixtures/telemetry/inventory_snapshot.v1.json` verifies carried-bag aggregate state and explicit exclusions for gold/bank/mail/AH state.
+
+`fixtures/telemetry/auction_observation.v1.json` verifies passive market observation transport.
+
 `fixtures/savedvariables/schema4.lua` covers state telemetry.
 
 `fixtures/savedvariables/schema4-events.lua` covers ordered append-only observations, retry ordering, and contiguous sequence acknowledgement.
@@ -112,6 +125,8 @@ The collector does not intentionally collect:
 - whispers
 - chat logs
 - private messages
+- Auction House owner names
+- Auction House bidder names
 
 Installation and character identifiers are generated locally and are not Battle.net account identifiers. Equipment is self-reported from the player's own character. The addon does not inspect-spam other players.
 
@@ -125,6 +140,7 @@ World of Warcraft: Forever exposes a mixture of modern and legacy APIs. Collecti
 - profession state is enumerated by explicit return position so nil gaps in `GetProfessions()` do not hide later secondary professions
 - full recipe catalogs are only available while the profession/tradeskill APIs expose them, normally after the player opens the relevant profession UI
 - recipe collection never opens a profession UI automatically and previously captured recipes are retained between ordinary character snapshots
+- Auction House collection only records result sets exposed by whichever modern or legacy APIs/events Forever makes available; absent APIs reduce coverage rather than triggering active scans
 - some item metadata depends on the local item cache; item id/link and parsed link modifiers remain available even when richer cached metadata is temporarily missing
 
 Missing APIs or partial data should reduce payload richness rather than crash the addon or invalidate the bridge record.
