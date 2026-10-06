@@ -4,24 +4,40 @@ Guildweaver's telemetry layer is intentionally generic. Holdfast is one consumer
 
 ## SavedVariables input
 
-SavedVariables schema 4 adds:
+SavedVariables schema 4 carries two generic outbound telemetry shapes.
 
-`GuildweaverDB.sync.outbound.telemetry[streamKey]`
+### Latest-state streams
 
-Each stream contains only its newest snapshot revision:
+`GuildweaverDB.sync.outbound.telemetry[streamKey]` keeps only the newest revision for state such as characters, professions, and recipe catalogs.
+
+Each stream contains:
 
 - `revision`
 - `updatedAt`
 - `fingerprint`
 - `envelope`
 
-This keeps SavedVariables bounded. Snapshot captures that have not materially changed do not create a new revision.
-
 Current state stream families include:
 
 - `character_snapshot:<characterId>`
 - `profession_snapshot:<characterId>`
 - `recipe_catalog_snapshot:<characterId>:<professionKey>`
+
+### Ordered event queue
+
+`GuildweaverDB.sync.outbound.events` is a separate bounded queue for observations that must not be overwritten by the next observation.
+
+The queue contains:
+
+- monotonic `nextSequence`
+- cumulative `dropped`
+- `items[eventId]`
+
+Each item contains record schema 1, a stable event id, sequence, created time, and a generic telemetry envelope. The addon retains the newest 512 events and increments `dropped` if an offline backlog overflows.
+
+The bridge sorts events by sequence and sends them through the same configured `telemetryEndpoint`. Each event is represented on the wire as a one-revision telemetry record with stream key `event:<eventId>`, which gives every observation the same stable idempotency mechanism as state telemetry.
+
+The bridge stores only the highest contiguous sequence successfully delivered for each SavedVariables file. If sequence N fails, later sequences are not sent during that pass. This prevents a temporary network/server failure from allowing later observations to leapfrog a missing one.
 
 ## Envelope schema 1
 
@@ -38,13 +54,13 @@ Every generic record uses:
 - optional anonymous `guildId`
 - `payload`
 
-The generic parser intentionally accepts new event types without a bridge release. State streams currently include `character_snapshot`, `profession_snapshot`, and `recipe_catalog_snapshot`; future event families can include `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `gathering_loot`, `vendor_seen`, and `boss_killed`.
+The generic parser intentionally accepts new event types without a bridge release. State streams currently include `character_snapshot`, `profession_snapshot`, and `recipe_catalog_snapshot`; queued event families can include `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `gathering_loot`, `vendor_seen`, and `boss_killed`.
 
 ## Transport
 
 The bridge continues to POST character snapshots to the existing paired website character endpoint for backward compatibility.
 
-Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. When configured, the bridge sends:
+Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. State and queued-event records both use:
 
 ```json
 {
@@ -65,15 +81,17 @@ Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. When
 }
 ```
 
+Queued events use `streamKey: event:<eventId>` and `revision: 1`.
+
 Headers:
 
 - `Authorization: Bearer <paired device credential>`
 - `Content-Type: application/json`
 - `Idempotency-Key: gw-<sha256>`
 
-The idempotency key is stable for the same stream revision. The bridge only records a telemetry revision as sent after a successful HTTP response. Network/server failures leave the record queued for the next polling cycle. A collector should also enforce idempotency server-side because reinstalling or moving a SavedVariables file can legitimately cause a client retry.
+The idempotency key is stable for the same stream revision/event id. State revisions and event sequences are only acknowledged locally after a successful HTTP response. Network/server failures leave records eligible for the next polling cycle. The collector service should also enforce idempotency server-side because bridge state can be lost or a SavedVariables file can move.
 
-When `telemetryEndpoint` is absent, generic records remain deferred and unacknowledged while the existing website character sync continues normally.
+When `telemetryEndpoint` is absent, generic state records and events remain deferred while the existing website character sync continues normally.
 
 ## Shared fixtures
 
@@ -81,7 +99,9 @@ When `telemetryEndpoint` is absent, generic records remain deferred and unacknow
 
 `fixtures/telemetry/profession_snapshot.v1.json` verifies that sparse profession slots, skill/max-skill/modifier state, and recipe coverage metadata survive generic bridge normalization unchanged.
 
-`fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture for the character state path.
+`fixtures/savedvariables/schema4.lua` covers state telemetry.
+
+`fixtures/savedvariables/schema4-events.lua` covers ordered append-only observations, retry ordering, and contiguous sequence acknowledgement.
 
 ## Privacy exclusions
 
