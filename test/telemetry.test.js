@@ -17,11 +17,13 @@ const envelope = JSON.parse(
 
 test("normalizes the shared character telemetry fixture", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
+    kind: "state",
     revision: 4,
     updatedAt: envelope.capturedAt,
     envelope,
   });
 
+  assert.equal(record.kind, "state");
   assert.equal(record.revision, 4);
   assert.equal(record.envelope.schemaVersion, 1);
   assert.equal(record.envelope.eventType, "character_snapshot");
@@ -31,12 +33,23 @@ test("normalizes the shared character telemetry fixture", () => {
 
   const body = telemetryTransportBody(record);
   assert.equal(body.streamKey, "character_snapshot:fixture");
+  assert.equal(body.kind, "state");
   assert.equal(body.revision, 4);
   assert.deepEqual(body.envelope, record.envelope);
 });
 
+test("defaults legacy telemetry records to state", () => {
+  const record = normalizeTelemetryRecord("character_snapshot:legacy", {
+    revision: 1,
+    envelope,
+  });
+
+  assert.equal(record.kind, "state");
+});
+
 test("produces a stable idempotency key for the same stream revision", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
+    kind: "state",
     revision: 4,
     envelope,
   });
@@ -60,6 +73,16 @@ test("rejects malformed and unsupported telemetry without throwing on partial pa
   assert.throws(
     () =>
       normalizeTelemetryRecord("character_snapshot:fixture", {
+        kind: "mystery",
+        revision: 1,
+        envelope,
+      }),
+    /unsupported kind mystery/,
+  );
+
+  assert.throws(
+    () =>
+      normalizeTelemetryRecord("character_snapshot:fixture", {
         revision: 0,
         envelope,
       }),
@@ -76,6 +99,7 @@ test("rejects malformed and unsupported telemetry without throwing on partial pa
   );
 
   const partial = normalizeTelemetryRecord("future_event:fixture", {
+    kind: "event",
     revision: 1,
     envelope: {
       schemaVersion: 1,
@@ -85,6 +109,7 @@ test("rejects malformed and unsupported telemetry without throwing on partial pa
     },
   });
 
+  assert.equal(partial.kind, "event");
   assert.equal(partial.envelope.realm, null);
   assert.equal(partial.envelope.installationId, null);
   assert.equal(partial.envelope.payload.safelyPartial, true);
