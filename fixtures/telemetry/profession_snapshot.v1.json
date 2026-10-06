@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "eventType": "profession_snapshot",
+  "capturedAt": 1791246400,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "60001",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-6ac2d704-1234abcd-5678ef90",
+  "characterId": "character-6ac2d704-aabbccdd-11223344",
+  "guildId": "guild-54b013a2",
+  "payload": {
+    "schemaVersion": 1,
+    "capturedAt": 1791246400,
+    "reason": "SKILL_LINES_CHANGED",
+    "characterId": "character-6ac2d704-aabbccdd-11223344",
+    "professions": [
+      {
+        "slot": "primary_2",
+        "kind": "primary",
+        "index": 2,
+        "id": 171,
+        "skillLineId": 171,
+        "name": "Alchemy",
+        "icon": 136240,
+        "skillLevel": 150,
+        "maxSkillLevel": 225,
+        "skillModifier": 7,
+        "recipeSnapshotAt": 1791246300,
+        "recipeSource": "C_TradeSkillUI",
+        "recipeCount": 2,
+        "knownRecipeCount": 2
+      },
+      {
+        "slot": "fishing",
+        "kind": "fishing",
+        "index": 4,
+        "id": 356,
+        "skillLineId": 356,
+        "name": "Fishing",
+        "icon": 136245,
+        "skillLevel": 75,
+        "maxSkillLevel": 150,
+        "skillModifier": 0,
+        "recipeCount": 0,
+        "knownRecipeCount": 0
+      }
+    ]
+  }
+}
