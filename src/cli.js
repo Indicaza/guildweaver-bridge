@@ -64,14 +64,14 @@ Usage:
   node src/cli.js background-status [--config path]
 
 Commands:
-  once                 Update Guildweaver, pair if needed, then sync once.
+  once                 Update Guildweaver and sync once.
   watch                Keep Guildweaver updated and watch SavedVariables.
-  pair                 Connect this computer to Holdfast and exit.
+  pair                 Connect this computer to Holdfast when enabled.
   install-background   Install/update the addon and run the bridge at login.
   uninstall-background Stop it and remove startup registration.
   background-status    Show whether the background bridge is installed/running.
 
-A config file is optional. Standard WoW installs and Holdfast production are discovered automatically.
+A config file is optional. Standard WoW installs and the default Holdfast integration are discovered automatically.
 `);
 }
 
@@ -164,12 +164,16 @@ async function main() {
   }
 
   if (command === "install-background") {
-    const credentials = await ensurePaired(config);
+    const credentials = config.holdfastEnabled ? await ensurePaired(config) : null;
     const addonResult = await ensureAddonCurrent(config);
     const addonMessage = describeAddonUpdate(addonResult);
     if (addonMessage) console.log(addonMessage);
     const installed = platformBackground.installBackground(config);
-    console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
+    if (credentials) {
+      console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
+    } else {
+      console.log("Holdfast integration is disabled; Guildweaver will run collector-only sync.");
+    }
     console.log("Guildweaver addon is installed and automatic updates are enabled.");
     console.log("Background sync installed and started. It will launch automatically when you sign in.");
     console.log(`Log: ${installed.logPath}`);
@@ -257,13 +261,13 @@ async function main() {
   let runtimeConfig = null;
 
   const pairRuntime = async () => {
-    credentials = await ensurePaired(config);
+    credentials = config.holdfastEnabled ? await ensurePaired(config) : null;
     const telemetryCredentials = readTelemetryCredentials(
       config.telemetryCredentialsPath,
     );
     runtimeConfig = {
       ...config,
-      deviceToken: credentials.deviceToken,
+      deviceToken: credentials?.deviceToken || null,
       telemetryToken: telemetryCredentials?.telemetryToken || null,
     };
   };
@@ -271,7 +275,11 @@ async function main() {
   await pairRuntime();
 
   if (command === "pair") {
-    console.log(`Connected as Holdfast member ${credentials.memberId || "unknown"}.`);
+    if (credentials) {
+      console.log(`Connected as Holdfast member ${credentials.memberId || "unknown"}.`);
+    } else {
+      console.log("Holdfast integration is disabled; no Holdfast pairing is required.");
+    }
     return;
   }
 
@@ -279,7 +287,10 @@ async function main() {
     try {
       return await syncOnce(runtimeConfig);
     } catch (error) {
-      if (!String(error?.message || "").includes("invalid_device_token")) {
+      if (
+        !config.holdfastEnabled ||
+        !String(error?.message || "").includes("invalid_device_token")
+      ) {
         throw error;
       }
 
@@ -294,9 +305,9 @@ async function main() {
     try {
       const result = await syncWithRepair();
 
-      if (result.sent > 0 || command === "once") {
+      if (result.sent > 0 || result.telemetrySent > 0 || command === "once") {
         console.log(
-          `Scan complete: ${result.files} file(s), ${result.discovered} outbound, ${result.sent} synced, ${result.skipped} skipped.`,
+          `Scan complete: ${result.files} file(s), ${result.discovered} Holdfast outbound, ${result.sent} Holdfast synced, ${result.telemetryDiscovered} telemetry outbound, ${result.telemetrySent} telemetry synced.`,
         );
       }
     } catch (error) {
