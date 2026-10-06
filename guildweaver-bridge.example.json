@@ -1,5 +1,6 @@
 {
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
+  "telemetryEndpoint": null,
   "wowRoot": "C:\\Program Files (x86)\\World of Warcraft\\_classic_beta_",
   "pollIntervalMs": 3000,
   "addonUpdateChannel": "edge",
