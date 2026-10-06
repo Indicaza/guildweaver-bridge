@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 
 export const TELEMETRY_SCHEMA_VERSION = 1;
+export const TELEMETRY_KINDS = new Set(["state", "event"]);
 
 function optionalString(value) {
   if (value === null || value === undefined) return null;
@@ -22,6 +23,11 @@ export function normalizeTelemetryRecord(streamKey, record) {
 
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     throw new Error(`Telemetry ${streamKey} must be an object`);
+  }
+
+  const kind = optionalString(record.kind) || "state";
+  if (!TELEMETRY_KINDS.has(kind)) {
+    throw new Error(`Telemetry ${streamKey} has unsupported kind ${kind}`);
   }
 
   const revision = Number(record.revision);
@@ -75,6 +81,7 @@ export function normalizeTelemetryRecord(streamKey, record) {
 
   return {
     streamKey: streamKey.trim(),
+    kind,
     revision,
     updatedAt: record.updatedAt ?? envelope.capturedAt,
     envelope: normalizedEnvelope,
@@ -84,6 +91,7 @@ export function normalizeTelemetryRecord(streamKey, record) {
 export function telemetryIdempotencyKey(record) {
   const stableIdentity = JSON.stringify({
     streamKey: record.streamKey,
+    kind: record.kind,
     revision: record.revision,
     installationId: record.envelope.installationId,
     characterId: record.envelope.characterId,
@@ -96,6 +104,7 @@ export function telemetryIdempotencyKey(record) {
 export function telemetryTransportBody(record) {
   return {
     streamKey: record.streamKey,
+    kind: record.kind,
     revision: record.revision,
     envelope: record.envelope,
   };
