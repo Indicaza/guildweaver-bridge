@@ -70,7 +70,7 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     addonPath: parsed.addonPath ? path.resolve(parsed.addonPath) : null,
     addonUpdateChannel,
     bridgeUpdateChannel,
-    addonUpdateIntervalMs: Number(parsed.addonUpdateIntervalMs) || 15 * 60 * 1000,
+    addonUpdateIntervalMs: Number(parsed.addonUpdateIntervalMs) || 60 * 1000,
     bridgeUpdateIntervalMs: Number(parsed.bridgeUpdateIntervalMs) || 60 * 1000,
     questSyncIntervalMs: Number(parsed.questSyncIntervalMs) || 15 * 1000,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 3000,
