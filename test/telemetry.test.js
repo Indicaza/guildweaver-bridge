@@ -22,6 +22,13 @@ const professionEnvelope = JSON.parse(
   ),
 );
 
+const inventoryEnvelope = JSON.parse(
+  fs.readFileSync(
+    new URL("../fixtures/telemetry/inventory_snapshot.v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
 test("normalizes the shared character telemetry fixture", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
     revision: 4,
@@ -58,6 +65,31 @@ test("passes profession state streams through the generic transport unchanged", 
   const body = telemetryTransportBody(record);
   assert.equal(body.streamKey, "profession_snapshot:fixture");
   assert.deepEqual(body.envelope.payload, professionEnvelope.payload);
+});
+
+test("passes carried inventory state through the generic transport unchanged", () => {
+  const record = normalizeTelemetryRecord("inventory_snapshot:fixture", {
+    revision: 3,
+    updatedAt: inventoryEnvelope.capturedAt,
+    envelope: inventoryEnvelope,
+  });
+
+  assert.equal(record.envelope.eventType, "inventory_snapshot");
+  assert.equal(record.envelope.payload.scope, "carried_bags");
+  assert.equal(record.envelope.payload.items.length, 2);
+  assert.equal(record.envelope.payload.items[1].itemId, 2840);
+  assert.equal(record.envelope.payload.items[1].count, 11);
+  assert.equal(record.envelope.payload.items[1].boundCount, 3);
+  assert.deepEqual(record.envelope.payload.excludes, [
+    "gold",
+    "bank",
+    "mail",
+    "auction_house",
+  ]);
+
+  const body = telemetryTransportBody(record);
+  assert.equal(body.streamKey, "inventory_snapshot:fixture");
+  assert.deepEqual(body.envelope.payload, inventoryEnvelope.payload);
 });
 
 test("produces a stable idempotency key for the same stream revision", () => {
