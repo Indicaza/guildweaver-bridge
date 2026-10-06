@@ -14,11 +14,13 @@ import {
   telemetryIdempotencyKey,
   telemetryTransportBody,
 } from "./telemetry.js";
+import { outboundTelemetryEvents } from "./telemetryEvents.js";
 
 function emptyState() {
   return {
     sentRevisions: {},
     sentTelemetryRevisions: {},
+    sentTelemetryEventSequences: {},
     questActions: {},
     lastQuestSyncAt: 0,
   };
@@ -40,6 +42,11 @@ function readState(statePath) {
         parsed?.sentTelemetryRevisions &&
         typeof parsed.sentTelemetryRevisions === "object"
           ? parsed.sentTelemetryRevisions
+          : {},
+      sentTelemetryEventSequences:
+        parsed?.sentTelemetryEventSequences &&
+        typeof parsed.sentTelemetryEventSequences === "object"
+          ? parsed.sentTelemetryEventSequences
           : {},
       questActions:
         parsed?.questActions && typeof parsed.questActions === "object"
@@ -210,6 +217,12 @@ export async function syncOnce(
   let telemetrySkipped = 0;
   let telemetryDeferred = 0;
   let telemetryFailed = 0;
+  let telemetryEventsDiscovered = 0;
+  let telemetryEventsSent = 0;
+  let telemetryEventsSkipped = 0;
+  let telemetryEventsDeferred = 0;
+  let telemetryEventsFailed = 0;
+  let telemetryEventsDropped = 0;
 
   for (const filePath of files) {
     let database;
@@ -295,6 +308,47 @@ export async function syncOnce(
       } catch (error) {
         telemetryFailed += 1;
         log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
+      }
+    }
+
+    const eventQueue = outboundTelemetryEvents(database);
+    telemetryEventsDropped += eventQueue.dropped;
+    const eventStateKey = stateKey(filePath, "telemetry-events");
+    let lastEventSequence = Number(state.sentTelemetryEventSequences[eventStateKey]) || 0;
+
+    for (const event of eventQueue.items) {
+      telemetryEventsDiscovered += 1;
+
+      if (event.error) {
+        telemetryEventsSkipped += 1;
+        log(`Skipping malformed telemetry event ${event.eventId}: ${event.error.message}`);
+        continue;
+      }
+
+      if (event.sequence <= lastEventSequence) {
+        telemetryEventsSkipped += 1;
+        continue;
+      }
+
+      if (!config.telemetryEndpoint) {
+        telemetryEventsDeferred += 1;
+        continue;
+      }
+
+      try {
+        const result = await postTelemetry(config, event.record, fetchImpl);
+        lastEventSequence = event.sequence;
+        state.sentTelemetryEventSequences[eventStateKey] = lastEventSequence;
+        writeState(config.statePath, state);
+        telemetryEventsSent += 1;
+        log(
+          `Synced event ${event.record.envelope.eventType} sequence ${event.sequence}` +
+            (result?.status ? ` (${result.status})` : ""),
+        );
+      } catch (error) {
+        telemetryEventsFailed += 1;
+        log(`Telemetry event ${event.eventId} remains queued: ${error.message}`);
+        break;
       }
     }
 
@@ -389,6 +443,12 @@ export async function syncOnce(
     telemetrySkipped,
     telemetryDeferred,
     telemetryFailed,
+    telemetryEventsDiscovered,
+    telemetryEventsSent,
+    telemetryEventsSkipped,
+    telemetryEventsDeferred,
+    telemetryEventsFailed,
+    telemetryEventsDropped,
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
