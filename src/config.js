@@ -83,6 +83,10 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     credentialsPath: path.resolve(
       parsed.credentialsPath || path.join(dataDirectory, "bridge-credentials.json"),
     ),
+    telemetryCredentialsPath: path.resolve(
+      parsed.telemetryCredentialsPath ||
+        path.join(dataDirectory, "telemetry-credentials.json"),
+    ),
     lockPath: path.resolve(
       parsed.lockPath || path.join(dataDirectory, "bridge.lock"),
     ),
