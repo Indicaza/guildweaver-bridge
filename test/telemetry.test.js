@@ -36,6 +36,13 @@ const auctionEnvelope = JSON.parse(
   ),
 );
 
+const collectorHealthEnvelope = JSON.parse(
+  fs.readFileSync(
+    new URL("../fixtures/telemetry/collector_health_snapshot.v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
 test("normalizes the shared character telemetry fixture", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
     revision: 4,
@@ -118,6 +125,24 @@ test("passes passive auction observations through the generic transport unchange
   const body = telemetryTransportBody(record);
   assert.equal(body.streamKey, "event:auction-fixture");
   assert.deepEqual(body.envelope.payload, auctionEnvelope.payload);
+});
+
+test("passes collector health state through the same generic transport", () => {
+  const record = normalizeTelemetryRecord("collector_health_snapshot:fixture", {
+    revision: 2,
+    updatedAt: collectorHealthEnvelope.capturedAt,
+    envelope: collectorHealthEnvelope,
+  });
+
+  assert.equal(record.envelope.eventType, "collector_health_snapshot");
+  assert.equal(record.envelope.payload.addonVersion, "0.5.0-alpha.1");
+  assert.equal(record.envelope.payload.capabilities.orderedEventQueue, true);
+  assert.equal(record.envelope.payload.observed.stateStreamCount, 4);
+  assert.equal(record.envelope.payload.eventQueue.capacity, 512);
+
+  const body = telemetryTransportBody(record);
+  assert.equal(body.streamKey, "collector_health_snapshot:fixture");
+  assert.deepEqual(body.envelope.payload, collectorHealthEnvelope.payload);
 });
 
 test("produces a stable idempotency key for the same stream revision", () => {

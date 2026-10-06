@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "eventType": "collector_health_snapshot",
+  "capturedAt": 1791270000,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "60001",
+    "buildDate": "Oct 6 2026",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-fixture",
+  "characterId": "character-fixture",
+  "guildId": "guild-fixture",
+  "payload": {
+    "schemaVersion": 1,
+    "capturedAt": 1791270000,
+    "reason": "INITIAL_DELAY",
+    "addonVersion": "0.5.0-alpha.1",
+    "savedVariablesSchemaVersion": 4,
+    "capabilities": {
+      "characterSnapshot": true,
+      "professionSnapshot": true,
+      "recipeCatalogSnapshot": true,
+      "inventorySnapshot": true,
+      "lootObservation": true,
+      "auctionObservation": true,
+      "orderedEventQueue": true
+    },
+    "observed": {
+      "characterSnapshot": true,
+      "talentApi": "legacy",
+      "professionCount": 2,
+      "knownRecipeCount": 37,
+      "stateStreamCount": 4,
+      "stateStreamTypes": [
+        "character_snapshot",
+        "inventory_snapshot",
+        "profession_snapshot",
+        "recipe_catalog_snapshot"
+      ]
+    },
+    "eventQueue": {
+      "queued": 3,
+      "capacity": 512,
+      "nextSequence": 12,
+      "dropped": 0
+    }
+  }
+}

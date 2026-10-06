@@ -50,6 +50,13 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     ? JSON.parse(fs.readFileSync(resolved, "utf8"))
     : {};
   const dataDirectory = appDataDirectory();
+  const holdfastUrl = normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL);
+  const configuredTelemetryEndpoint = Object.prototype.hasOwnProperty.call(
+    parsed,
+    "telemetryEndpoint",
+  )
+    ? parsed.telemetryEndpoint
+    : `${holdfastUrl}/api/bridge/telemetry`;
   const addonUpdateChannel = String(parsed.addonUpdateChannel || "edge").toLowerCase();
   const bridgeUpdateChannel = String(
     parsed.bridgeUpdateChannel || addonUpdateChannel,
@@ -58,9 +65,9 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     ? path.resolve(parsed.launchAgentPath)
     : defaultLaunchAgentPath();
   const config = {
-    holdfastUrl: normalizeUrl(parsed.holdfastUrl || DEFAULT_HOLDFAST_URL),
-    telemetryEndpoint: parsed.telemetryEndpoint
-      ? normalizeUrl(parsed.telemetryEndpoint)
+    holdfastUrl,
+    telemetryEndpoint: configuredTelemetryEndpoint
+      ? normalizeUrl(configuredTelemetryEndpoint)
       : null,
     wowRoot: parsed.wowRoot ? path.resolve(parsed.wowRoot) : null,
     savedVariablesPath: parsed.savedVariablesPath
