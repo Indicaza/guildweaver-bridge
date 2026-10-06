@@ -15,6 +15,13 @@ const envelope = JSON.parse(
   ),
 );
 
+const professionEnvelope = JSON.parse(
+  fs.readFileSync(
+    new URL("../fixtures/telemetry/profession_snapshot.v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
 test("normalizes the shared character telemetry fixture", () => {
   const record = normalizeTelemetryRecord("character_snapshot:fixture", {
     revision: 4,
@@ -33,6 +40,24 @@ test("normalizes the shared character telemetry fixture", () => {
   assert.equal(body.streamKey, "character_snapshot:fixture");
   assert.equal(body.revision, 4);
   assert.deepEqual(body.envelope, record.envelope);
+});
+
+test("passes profession state streams through the generic transport unchanged", () => {
+  const record = normalizeTelemetryRecord("profession_snapshot:fixture", {
+    revision: 2,
+    updatedAt: professionEnvelope.capturedAt,
+    envelope: professionEnvelope,
+  });
+
+  assert.equal(record.envelope.eventType, "profession_snapshot");
+  assert.equal(record.envelope.payload.professions.length, 2);
+  assert.equal(record.envelope.payload.professions[0].name, "Alchemy");
+  assert.equal(record.envelope.payload.professions[0].skillLevel, 150);
+  assert.equal(record.envelope.payload.professions[0].knownRecipeCount, 2);
+
+  const body = telemetryTransportBody(record);
+  assert.equal(body.streamKey, "profession_snapshot:fixture");
+  assert.deepEqual(body.envelope.payload, professionEnvelope.payload);
 });
 
 test("produces a stable idempotency key for the same stream revision", () => {
