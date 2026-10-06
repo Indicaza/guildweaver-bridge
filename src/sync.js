@@ -128,14 +128,15 @@ async function postTelemetry(config, record, fetchImpl) {
     return null;
   }
 
-  if (!config.deviceToken) {
-    throw new Error("Generic telemetry transport requires a paired device credential");
+  const telemetryToken = config.telemetryToken || config.deviceToken;
+  if (!telemetryToken) {
+    throw new Error("Generic telemetry transport requires a collector credential");
   }
 
   const response = await fetchImpl(config.telemetryEndpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.deviceToken}`,
+      Authorization: `Bearer ${telemetryToken}`,
       "Content-Type": "application/json",
       "Idempotency-Key": telemetryIdempotencyKey(record),
     },
