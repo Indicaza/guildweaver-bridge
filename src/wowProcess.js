@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 const WOW_PROCESS_PATTERNS = [
-  /(?:^|[\\/\s])wow(?:classic|t|b)?(?:\.exe)?(?:$|\s)/i,
+  /(?:^|["'\\/\s])wow(?:classic(?:t|b)?|t|b)?(?:\.exe)?(?=$|["',\s])/i,
   /world of warcraft(?:\.app)?/i,
 ];
 
