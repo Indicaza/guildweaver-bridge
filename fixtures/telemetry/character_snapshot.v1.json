@@ -4,7 +4,7 @@
   "capturedAt": 1791242820,
   "gameBuild": {
     "version": "1.60.1",
-    "build": "60001",
+    "build": "70235",
     "buildDate": "Oct 5 2026",
     "interface": 16001
   },
@@ -14,9 +14,8 @@
   "characterId": "character-6ac2d704-aabbccdd-11223344",
   "guildId": "guild-54b013a2",
   "payload": {
-    "schemaVersion": 2,
+    "schemaVersion": 3,
     "capturedAt": 1791242820,
-    "reason": "PLAYER_EQUIPMENT_CHANGED",
     "addonVersion": "0.5.0-alpha.1",
     "characterKey": "classic beta pve 2:rook",
     "characterId": "character-6ac2d704-aabbccdd-11223344",
@@ -27,14 +26,14 @@
     "sex": 2,
     "bodyType": "male",
     "race": {
+      "id": 4,
       "name": "Night Elf",
-      "file": "NightElf",
-      "id": 4
+      "token": "NightElf"
     },
     "class": {
+      "id": 1,
       "name": "Warrior",
-      "file": "WARRIOR",
-      "id": 1
+      "token": "WARRIOR"
     },
     "guild": {
       "name": "Example Guild",
@@ -46,7 +45,7 @@
       "index": 1,
       "id": 71,
       "name": "Arms",
-      "icon": 132355,
+      "iconFileDataId": 132355,
       "role": "DAMAGER"
     },
     "talents": {
@@ -67,55 +66,25 @@
           "spentInTree": 10
         }
       ],
-      "trees": [
+      "allocations": [
         {
-          "id": 20001,
-          "rootNodeId": 40001,
-          "nodes": [
-            {
-              "id": 40001,
-              "position": {
-                "x": 540,
-                "y": 90
-              },
-              "activeRank": 1,
-              "currentRank": 1,
-              "ranksPurchased": 1,
-              "maxRanks": 1,
-              "isAvailable": true,
-              "isVisible": true,
-              "meetsEdgeRequirements": true,
-              "conditionIds": [],
-              "entries": [
-                {
-                  "id": 50001,
-                  "definitionId": 60001,
-                  "spellId": 70001,
-                  "icon": 132333,
-                  "name": "Example Talent",
-                  "maxRanks": 1,
-                  "selected": true,
-                  "rank": 1,
-                  "isAvailable": true
-                }
-              ]
-            }
-          ],
-          "edges": []
+          "nodeId": 40001,
+          "rank": 1,
+          "ranksPurchased": 1,
+          "activeEntryId": 50001,
+          "activeEntryRank": 1
         }
       ]
     },
     "professions": [
       {
-        "id": 164,
+        "skillLineId": 164,
         "name": "Blacksmithing",
         "kind": "primary",
-        "icon": 136241,
+        "iconFileDataId": 136241,
         "skillLevel": 150,
         "maxSkillLevel": 150,
-        "skillLineId": 164,
         "skillModifier": 5,
-        "skillLineName": "Blacksmithing",
         "specialization": {
           "configId": 81001,
           "name": "Blacksmithing",
@@ -125,11 +94,11 @@
         "recipeSource": "C_TradeSkillUI",
         "recipes": [
           {
-            "id": 1001,
+            "recipeId": 1001,
             "name": "Copper Bracers",
             "known": true,
-            "icon": 132604,
-            "professionId": 164,
+            "iconFileDataId": 132604,
+            "professionSkillLineId": 164,
             "professionName": "Blacksmithing",
             "skillLineAbilityId": 90001,
             "relativeDifficulty": 2,
@@ -155,25 +124,29 @@
     ],
     "equipment": [
       {
-        "slot": "MainHandSlot",
+        "slot": "main_hand",
         "slotId": 16,
         "itemId": 5191,
-        "itemLink": "|cff0070dd|Hitem:5191:17:0:0:0:0:0:0:30:::::::|h[Cruel Barb]|h|r",
-        "itemString": "item:5191:17:0:0:0:0:0:0:30:::::::",
-        "quality": 3,
-        "itemLevel": 24,
-        "icon": 135324,
-        "enchantId": 17,
-        "gemIds": [],
-        "bonusIds": [],
-        "modifierData": [5191, 17, 0, 0, 0, 0, 0, 0, 30],
         "name": "Cruel Barb",
+        "qualityId": 3,
+        "itemLevel": 24,
         "requiredLevel": 19,
-        "class": "Weapon",
-        "subclass": "One-Handed Swords",
-        "classId": 2,
-        "subclassId": 7,
-        "equipLocation": "INVTYPE_WEAPON"
+        "iconFileDataId": 135324,
+        "enchantId": 17,
+        "gemItemIds": [],
+        "bonusIds": [],
+        "linkLevel": 30,
+        "itemClass": {
+          "id": 2,
+          "name": "Weapon"
+        },
+        "itemSubclass": {
+          "id": 7,
+          "name": "One-Handed Swords"
+        },
+        "equipLocation": "INVTYPE_WEAPON",
+        "itemLink": "|cff0070dd|Hitem:5191:17:0:0:0:0:0:0:30:::::::|h[Cruel Barb]|h|r",
+        "rawItemString": "item:5191:17:0:0:0:0:0:0:30:::::::"
       }
     ]
   }
