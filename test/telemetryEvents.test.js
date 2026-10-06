@@ -52,9 +52,12 @@ test("normalizes queued events in sequence order", () => {
   assert.deepEqual(queue.items.map((event) => event.sequence), [1, 2, 3]);
   assert.deepEqual(
     queue.items.map((event) => event.record.envelope.eventType),
-    ["item_looted", "craft_completed", "recipe_learned"],
+    ["loot_observation", "craft_completed", "recipe_learned"],
   );
   assert.equal(queue.items[0].record.streamKey, "event:install-fixture:character-fixture:1");
+  assert.equal(queue.items[0].record.envelope.payload.location.mapId, 56);
+  assert.equal(queue.items[0].record.envelope.payload.items[0].itemId, 765);
+  assert.equal(queue.items[0].record.envelope.payload.items[0].sources[0].objectId, 1617);
 });
 
 test("drains queued events once and tracks the highest contiguous sequence", async () => {
@@ -78,10 +81,12 @@ test("drains queued events once and tracks the highest contiguous sequence", asy
     assert.equal(second.telemetryEventsSent, 0);
     assert.equal(second.telemetryEventsSkipped, 3);
     assert.deepEqual(bodies.map((body) => body.envelope.eventType), [
-      "item_looted",
+      "loot_observation",
       "craft_completed",
       "recipe_learned",
     ]);
+    assert.equal(bodies[0].envelope.payload.items[0].itemId, 765);
+    assert.equal(bodies[0].envelope.payload.items[0].quantity, 3);
 
     const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
     assert.equal(Object.values(state.sentTelemetryEventSequences)[0], 3);
@@ -111,7 +116,7 @@ test("stops at a failed event so later sequences cannot leapfrog it", async () =
     const first = await syncOnce(config, { fetchImpl, log: () => {} });
     assert.equal(first.telemetryEventsSent, 1);
     assert.equal(first.telemetryEventsFailed, 1);
-    assert.deepEqual(attempted, ["item_looted", "craft_completed"]);
+    assert.deepEqual(attempted, ["loot_observation", "craft_completed"]);
 
     let state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
     assert.equal(Object.values(state.sentTelemetryEventSequences)[0], 1);
@@ -120,7 +125,7 @@ test("stops at a failed event so later sequences cannot leapfrog it", async () =
     const second = await syncOnce(config, { fetchImpl, log: () => {} });
     assert.equal(second.telemetryEventsSent, 2);
     assert.deepEqual(attempted, [
-      "item_looted",
+      "loot_observation",
       "craft_completed",
       "craft_completed",
       "recipe_learned",
