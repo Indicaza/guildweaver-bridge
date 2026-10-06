@@ -29,8 +29,18 @@ jobs:
         with:
           node-version: 22
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+
       - name: Syntax check
         run: npm run check
 
       - name: Test
         run: npm test
+
+      - name: Test native installer
+        working-directory: installer
+        run: go test ./...
