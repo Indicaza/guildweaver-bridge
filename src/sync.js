@@ -19,6 +19,7 @@ function emptyState() {
   return {
     sentRevisions: {},
     sentTelemetryRevisions: {},
+    sentTelemetryFingerprints: {},
     questActions: {},
     lastQuestSyncAt: 0,
   };
@@ -40,6 +41,11 @@ function readState(statePath) {
         parsed?.sentTelemetryRevisions &&
         typeof parsed.sentTelemetryRevisions === "object"
           ? parsed.sentTelemetryRevisions
+          : {},
+      sentTelemetryFingerprints:
+        parsed?.sentTelemetryFingerprints &&
+        typeof parsed.sentTelemetryFingerprints === "object"
+          ? parsed.sentTelemetryFingerprints
           : {},
       questActions:
         parsed?.questActions && typeof parsed.questActions === "object"
@@ -278,6 +284,18 @@ export async function syncOnce(
         continue;
       }
 
+      if (
+        record.kind === "state" &&
+        record.fingerprint &&
+        state.sentTelemetryFingerprints[key] === record.fingerprint
+      ) {
+        state.sentTelemetryRevisions[key] = record.revision;
+        writeState(config.statePath, state);
+        telemetrySkipped += 1;
+        log(`Skipped unchanged telemetry ${record.streamKey} revision ${record.revision}.`);
+        continue;
+      }
+
       if (!config.telemetryEndpoint) {
         telemetryDeferred += 1;
         continue;
@@ -286,6 +304,9 @@ export async function syncOnce(
       try {
         const result = await postTelemetry(config, record, fetchImpl);
         state.sentTelemetryRevisions[key] = record.revision;
+        if (record.fingerprint) {
+          state.sentTelemetryFingerprints[key] = record.fingerprint;
+        }
         writeState(config.statePath, state);
         telemetrySent += 1;
         log(
