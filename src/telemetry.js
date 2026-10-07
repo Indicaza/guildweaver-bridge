@@ -76,6 +76,8 @@ export function normalizeTelemetryRecord(streamKey, record) {
     installationId: optionalString(envelope.installationId),
     characterId: optionalString(envelope.characterId),
     guildId: optionalString(envelope.guildId),
+    sessionId: optionalString(envelope.sessionId),
+    checkpoint: optionalString(envelope.checkpoint),
     payload: envelope.payload,
   };
 
@@ -83,6 +85,7 @@ export function normalizeTelemetryRecord(streamKey, record) {
     streamKey: streamKey.trim(),
     kind,
     revision,
+    fingerprint: optionalString(record.fingerprint),
     updatedAt: record.updatedAt ?? envelope.capturedAt,
     envelope: normalizedEnvelope,
   };
