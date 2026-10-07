@@ -63,6 +63,8 @@ export function normalizeTelemetryRecord(streamKey, record) {
     throw new Error(`Telemetry ${streamKey} payload must be an object`);
   }
 
+  const sessionId = optionalString(envelope.sessionId);
+  const checkpoint = optionalString(envelope.checkpoint);
   const normalizedEnvelope = {
     schemaVersion: TELEMETRY_SCHEMA_VERSION,
     eventType,
@@ -76,8 +78,8 @@ export function normalizeTelemetryRecord(streamKey, record) {
     installationId: optionalString(envelope.installationId),
     characterId: optionalString(envelope.characterId),
     guildId: optionalString(envelope.guildId),
-    sessionId: optionalString(envelope.sessionId),
-    checkpoint: optionalString(envelope.checkpoint),
+    ...(sessionId ? { sessionId } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
     payload: envelope.payload,
   };
 
