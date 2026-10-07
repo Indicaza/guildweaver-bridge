@@ -80,6 +80,45 @@ test("sends generic telemetry once with an idempotency key across paths with spa
 
     const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
     assert.equal(Object.values(state.sentTelemetryRevisions)[0], 3);
+    assert.equal(Object.values(state.sentTelemetryFingerprints)[0], "09def876");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("acknowledges a newer state revision without reposting an unchanged fingerprint", async () => {
+  const { directory, config } = setup();
+  const telemetryKey = `${path.resolve(config.savedVariablesPath)}::telemetry:character_snapshot:character-fixture`;
+  fs.mkdirSync(path.dirname(config.statePath), { recursive: true });
+  fs.writeFileSync(
+    config.statePath,
+    JSON.stringify({
+      sentRevisions: {},
+      sentTelemetryRevisions: { [telemetryKey]: 2 },
+      sentTelemetryFingerprints: { [telemetryKey]: "09def876" },
+      questActions: {},
+      lastQuestSyncAt: 0,
+    }),
+    "utf8",
+  );
+  const requests = [];
+
+  try {
+    const result = await syncOnce(config, {
+      fetchImpl: async (url) => {
+        requests.push(url);
+        return ok(url.includes("characters/snapshot") ? { status: "updated" } : undefined);
+      },
+      log: () => {},
+    });
+
+    assert.equal(result.telemetrySent, 0);
+    assert.equal(result.telemetrySkipped, 1);
+    assert.deepEqual(requests, ["https://holdfast.example/api/bridge/characters/snapshot"]);
+
+    const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
+    assert.equal(state.sentTelemetryRevisions[telemetryKey], 3);
+    assert.equal(state.sentTelemetryFingerprints[telemetryKey], "09def876");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
