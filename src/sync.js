@@ -86,6 +86,10 @@ function validQuestAction(value) {
   );
 }
 
+function invalidDeviceToken(error) {
+  return String(error?.message || "").includes("invalid_device_token");
+}
+
 async function responseBody(response) {
   const text = await response.text();
   let body = null;
@@ -209,6 +213,7 @@ export async function syncOnce(
   const currentQuestActionIds = new Set();
   let discovered = 0;
   let sent = 0;
+  let failed = 0;
   let skipped = 0;
   let skippedFiles = 0;
   let telemetryDiscovered = 0;
@@ -251,17 +256,23 @@ export async function syncOnce(
         continue;
       }
 
-      const result = await postSnapshot(config, envelope, fetchImpl);
-      state.sentRevisions[key] = revision;
-      writeState(config.statePath, state);
-      sent += 1;
+      try {
+        const result = await postSnapshot(config, envelope, fetchImpl);
+        state.sentRevisions[key] = revision;
+        writeState(config.statePath, state);
+        sent += 1;
 
-      const name = snapshot.name || characterKey;
-      const level = snapshot.level ? ` level ${snapshot.level}` : "";
-      log(
-        `Synced ${name}${level} revision ${revision}` +
-          (result?.status ? ` (${result.status})` : ""),
-      );
+        const name = snapshot.name || characterKey;
+        const level = snapshot.level ? ` level ${snapshot.level}` : "";
+        log(
+          `Synced ${name}${level} revision ${revision}` +
+            (result?.status ? ` (${result.status})` : ""),
+        );
+      } catch (error) {
+        if (invalidDeviceToken(error)) throw error;
+        failed += 1;
+        log(`Snapshot ${characterKey} remains queued: ${error.message}`);
+      }
     }
 
     for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
@@ -404,6 +415,7 @@ export async function syncOnce(
     skippedFiles,
     discovered,
     sent,
+    failed,
     skipped,
     telemetryDiscovered,
     telemetrySent,
