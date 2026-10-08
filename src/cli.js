@@ -273,9 +273,9 @@ async function main() {
     return;
   }
 
-  const syncWithRepair = async () => {
+  const syncWithRepair = async ({ reconcileState = false } = {}) => {
     try {
-      return await syncOnce(runtimeConfig);
+      return await syncOnce(runtimeConfig, { reconcileState });
     } catch (error) {
       if (!String(error?.message || "").includes("invalid_device_token")) {
         throw error;
@@ -284,35 +284,59 @@ async function main() {
       console.log("Holdfast connection expired or was revoked. Reconnecting…");
       clearCredentials(config.credentialsPath);
       await pairRuntime();
-      return syncOnce(runtimeConfig);
+      return syncOnce(runtimeConfig, { reconcileState });
     }
   };
 
-  const run = async () => {
-    try {
-      const result = await syncWithRepair();
+  let syncInFlight = false;
+  let reconcileRequested = true;
+  let lastStateReconcileAt = 0;
 
-      if (result.sent > 0 || command === "once") {
+  const run = async ({ reconcileState = false } = {}) => {
+    if (reconcileState) reconcileRequested = true;
+    if (syncInFlight) return false;
+
+    syncInFlight = true;
+    const shouldReconcile = reconcileRequested;
+    if (shouldReconcile) reconcileRequested = false;
+
+    try {
+      const result = await syncWithRepair({ reconcileState: shouldReconcile });
+      if (shouldReconcile) lastStateReconcileAt = Date.now();
+
+      if (
+        result.sent > 0 ||
+        result.telemetrySent > 0 ||
+        shouldReconcile ||
+        command === "once"
+      ) {
         console.log(
-          `Scan complete: ${result.files} file(s), ${result.discovered} outbound, ${result.sent} synced, ${result.skipped} skipped.`,
+          `Scan complete: ${result.files} file(s), ${result.sent} character snapshot(s), ${result.telemetrySent} telemetry record(s), ${result.skipped + result.telemetrySkipped} skipped${shouldReconcile ? ", state reconciled" : ""}.`,
         );
       }
+      return true;
     } catch (error) {
+      if (shouldReconcile) reconcileRequested = true;
       console.error(`Guildweaver Bridge: ${error.message}`);
 
       if (command === "once") {
         process.exitCode = 1;
       }
+      return false;
+    } finally {
+      syncInFlight = false;
     }
   };
 
-  await run();
+  await run({ reconcileState: true });
 
   if (command === "once") {
     return;
   }
 
-  console.log(`Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms.`);
+  console.log(
+    `Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms; reconciling current state every ${Math.round(config.stateReconcileIntervalMs / 60000)}m.`,
+  );
 
   await new Promise((resolve) => {
     let stopping = false;
@@ -321,7 +345,11 @@ async function main() {
     let bridgeUpdateTimer = null;
     let wowProcessTimer = null;
 
-    const syncTimer = setInterval(run, config.pollIntervalMs);
+    const syncTimer = setInterval(() => {
+      const reconcileState =
+        Date.now() - lastStateReconcileAt >= config.stateReconcileIntervalMs;
+      void run({ reconcileState });
+    }, config.pollIntervalMs);
     const addonUpdateTimer = setInterval(updateAddon, config.addonUpdateIntervalMs);
 
     const clearWatchTimers = () => {
@@ -380,6 +408,7 @@ async function main() {
       const restarted = await checkBridgeAndRestart();
       if (!restarted && !stopping) {
         await updateAddon();
+        await run({ reconcileState: true });
       }
     }, WOW_PROCESS_POLL_INTERVAL_MS);
 
