@@ -28,6 +28,7 @@ import {
 import { clearCredentials, ensurePaired } from "./pairing.js";
 import { updateBridgeSource } from "./sourceUpdater.js";
 import { syncOnce } from "./sync.js";
+import { invalidateOutboundDeliveryCache } from "./syncState.js";
 import { isWowRunning } from "./wowProcess.js";
 
 const WOW_PROCESS_POLL_INTERVAL_MS = 5000;
@@ -271,6 +272,11 @@ async function main() {
   if (command === "pair") {
     console.log(`Connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     return;
+  }
+
+  const replayingDurableState = invalidateOutboundDeliveryCache(config.statePath);
+  if (replayingDurableState) {
+    console.log("Replaying current Guildweaver character and telemetry state into Holdfast.");
   }
 
   const syncWithRepair = async () => {
