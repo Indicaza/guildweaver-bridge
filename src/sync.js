@@ -205,7 +205,12 @@ async function getQuestSnapshot(config, fetchImpl) {
 
 export async function syncOnce(
   config,
-  { fetchImpl = fetch, log = console.log, now = Date.now } = {},
+  {
+    fetchImpl = fetch,
+    log = console.log,
+    now = Date.now,
+    reconcileState = false,
+  } = {},
 ) {
   const files = findSavedVariablesFiles(config);
   const state = readState(config.statePath);
@@ -251,7 +256,7 @@ export async function syncOnce(
       const key = stateKey(filePath, characterKey);
       const previousRevision = Number(state.sentRevisions[key]) || 0;
 
-      if (previousRevision >= revision) {
+      if (!reconcileState && previousRevision >= revision) {
         skipped += 1;
         continue;
       }
@@ -289,13 +294,15 @@ export async function syncOnce(
 
       const key = stateKey(filePath, `telemetry:${record.streamKey}`);
       const previousRevision = Number(state.sentTelemetryRevisions[key]) || 0;
+      const forceStateReplay = reconcileState && record.kind === "state";
 
-      if (previousRevision >= record.revision) {
+      if (!forceStateReplay && previousRevision >= record.revision) {
         telemetrySkipped += 1;
         continue;
       }
 
       if (
+        !forceStateReplay &&
         record.kind === "state" &&
         record.fingerprint &&
         state.sentTelemetryFingerprints[key] === record.fingerprint
@@ -325,6 +332,7 @@ export async function syncOnce(
             (result?.status ? ` (${result.status})` : ""),
         );
       } catch (error) {
+        if (invalidDeviceToken(error)) throw error;
         telemetryFailed += 1;
         log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
       }
@@ -425,5 +433,6 @@ export async function syncOnce(
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
+    reconciledState: Boolean(reconcileState),
   };
 }
