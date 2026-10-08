@@ -22,6 +22,7 @@ function emptyState() {
     sentTelemetryFingerprints: {},
     questActions: {},
     lastQuestSyncAt: 0,
+    lastServerReconcileAt: 0,
   };
 }
 
@@ -52,6 +53,7 @@ function readState(statePath) {
           ? parsed.questActions
           : {},
       lastQuestSyncAt: Number(parsed?.lastQuestSyncAt) || 0,
+      lastServerReconcileAt: Number(parsed?.lastServerReconcileAt) || 0,
     };
   } catch {
     return emptyState();
@@ -103,7 +105,7 @@ async function responseBody(response) {
   return { text, body };
 }
 
-async function postSnapshot(config, envelope, fetchImpl) {
+async function postSnapshot(config, streamKey, envelope, fetchImpl) {
   if (!config.deviceToken) {
     throw new Error("Guildweaver Bridge is not paired with Holdfast");
   }
@@ -117,6 +119,7 @@ async function postSnapshot(config, envelope, fetchImpl) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        streamKey,
         revision: Number(envelope.revision),
         snapshot: envelope.payload,
       }),
@@ -161,6 +164,41 @@ async function postTelemetry(config, record, fetchImpl) {
   return body;
 }
 
+async function postSyncState(config, manifest, fetchImpl) {
+  if (!config.deviceToken) {
+    throw new Error("Guildweaver Bridge is not paired with Holdfast");
+  }
+
+  const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/sync-state`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.deviceToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(manifest),
+  });
+  const { text, body } = await responseBody(response);
+
+  // Safe rolling deployment: old website versions simply leave the local cache
+  // behavior in place until the server-side reconciliation endpoint is live.
+  if (response.status === 404) return { supported: false };
+
+  if (!response.ok) {
+    const detail = body?.error || text || `HTTP ${response.status}`;
+    throw new Error(`Holdfast sync-state failed: ${detail}`);
+  }
+
+  if (
+    Number(body?.schemaVersion) !== 1 ||
+    !Array.isArray(body?.characters) ||
+    !Array.isArray(body?.telemetry)
+  ) {
+    throw new Error("Holdfast returned an invalid sync-state response");
+  }
+
+  return { supported: true, ...body };
+}
+
 async function postQuestActions(config, actions, fetchImpl) {
   const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/quests/actions`, {
     method: "POST",
@@ -203,12 +241,54 @@ async function getQuestSnapshot(config, fetchImpl) {
   return body;
 }
 
+function reconciliationManifest(loaded, includeTelemetry) {
+  const characters = new Map();
+  const telemetry = new Map();
+
+  for (const { database } of loaded) {
+    for (const [streamKey, envelope] of Object.entries(outboundCharacters(database))) {
+      const revision = Number(envelope?.revision);
+      if (!Number.isInteger(revision) || revision < 1 || !envelope?.payload) continue;
+      characters.set(streamKey, Math.max(characters.get(streamKey) || 0, revision));
+    }
+
+    if (!includeTelemetry) continue;
+    for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
+      try {
+        const record = normalizeTelemetryRecord(streamKey, rawRecord);
+        telemetry.set(
+          record.streamKey,
+          Math.max(telemetry.get(record.streamKey) || 0, record.revision),
+        );
+      } catch {
+        // The normal telemetry pass reports malformed records with useful context.
+      }
+    }
+  }
+
+  const entries = (map) => [...map.entries()].map(([streamKey, revision]) => ({
+    streamKey,
+    revision,
+  }));
+
+  return { characters: entries(characters), telemetry: entries(telemetry) };
+}
+
+function revisionMap(values) {
+  return new Map(
+    (Array.isArray(values) ? values : [])
+      .map((value) => [String(value?.streamKey || ""), Number(value?.serverRevision) || 0])
+      .filter(([streamKey]) => streamKey),
+  );
+}
+
 export async function syncOnce(
   config,
   { fetchImpl = fetch, log = console.log, now = Date.now } = {},
 ) {
   const files = findSavedVariablesFiles(config);
   const state = readState(config.statePath);
+  const loaded = [];
   const pendingQuestActions = new Map();
   const currentQuestActionIds = new Set();
   let discovered = 0;
@@ -223,18 +303,51 @@ export async function syncOnce(
   let telemetryFailed = 0;
 
   for (const filePath of files) {
-    let database;
-
     try {
       const source = fs.readFileSync(filePath, "utf8");
-      database = parseSavedVariables(source);
+      const database = parseSavedVariables(source);
       assertSupportedSavedVariablesSchema(database);
+      loaded.push({ filePath, database });
     } catch (error) {
       skippedFiles += 1;
       log(`Skipping unreadable Guildweaver SavedVariables ${filePath}: ${error.message}`);
-      continue;
     }
+  }
 
+  let serverAuthority = false;
+  let serverCharacterRevisions = new Map();
+  let serverTelemetryRevisions = new Map();
+  const reconcileIntervalMs = Number(config.reconcileIntervalMs);
+  const scanTimestamp = now();
+  const reconcileDue =
+    Number.isFinite(reconcileIntervalMs) &&
+    reconcileIntervalMs > 0 &&
+    scanTimestamp - state.lastServerReconcileAt >= reconcileIntervalMs;
+
+  if (reconcileDue) {
+    // Record the attempt before network I/O so a transient server problem does
+    // not turn the one-second SavedVariables poll into a request storm.
+    state.lastServerReconcileAt = scanTimestamp;
+    writeState(config.statePath, state);
+
+    try {
+      const reconciliation = await postSyncState(
+        config,
+        reconciliationManifest(loaded, Boolean(config.telemetryEndpoint)),
+        fetchImpl,
+      );
+      serverAuthority = reconciliation.supported === true;
+      if (serverAuthority) {
+        serverCharacterRevisions = revisionMap(reconciliation.characters);
+        serverTelemetryRevisions = revisionMap(reconciliation.telemetry);
+      }
+    } catch (error) {
+      if (invalidDeviceToken(error)) throw error;
+      log(`Guildweaver server reconciliation deferred: ${error.message}`);
+    }
+  }
+
+  for (const { filePath, database } of loaded) {
     const outbound = outboundCharacters(database);
 
     for (const [characterKey, envelope] of Object.entries(outbound)) {
@@ -250,14 +363,26 @@ export async function syncOnce(
 
       const key = stateKey(filePath, characterKey);
       const previousRevision = Number(state.sentRevisions[key]) || 0;
+      const serverRevision = serverAuthority
+        ? Number(serverCharacterRevisions.get(characterKey) || 0)
+        : null;
+      const serverHasRevision = serverAuthority && serverRevision >= revision;
+      const serverMissingRevision = serverAuthority && serverRevision < revision;
 
-      if (previousRevision >= revision) {
+      if (serverHasRevision) {
+        state.sentRevisions[key] = Math.max(previousRevision, revision);
+        writeState(config.statePath, state);
+        skipped += 1;
+        continue;
+      }
+
+      if (!serverMissingRevision && previousRevision >= revision) {
         skipped += 1;
         continue;
       }
 
       try {
-        const result = await postSnapshot(config, envelope, fetchImpl);
+        const result = await postSnapshot(config, characterKey, envelope, fetchImpl);
         state.sentRevisions[key] = revision;
         writeState(config.statePath, state);
         sent += 1;
@@ -289,13 +414,27 @@ export async function syncOnce(
 
       const key = stateKey(filePath, `telemetry:${record.streamKey}`);
       const previousRevision = Number(state.sentTelemetryRevisions[key]) || 0;
+      const serverRevision = serverAuthority
+        ? Number(serverTelemetryRevisions.get(record.streamKey) || 0)
+        : null;
+      const serverHasRevision = serverAuthority && serverRevision >= record.revision;
+      const serverMissingRevision = serverAuthority && serverRevision < record.revision;
 
-      if (previousRevision >= record.revision) {
+      if (serverHasRevision) {
+        state.sentTelemetryRevisions[key] = Math.max(previousRevision, record.revision);
+        if (record.fingerprint) state.sentTelemetryFingerprints[key] = record.fingerprint;
+        writeState(config.statePath, state);
+        telemetrySkipped += 1;
+        continue;
+      }
+
+      if (!serverMissingRevision && previousRevision >= record.revision) {
         telemetrySkipped += 1;
         continue;
       }
 
       if (
+        !serverMissingRevision &&
         record.kind === "state" &&
         record.fingerprint &&
         state.sentTelemetryFingerprints[key] === record.fingerprint
@@ -325,6 +464,7 @@ export async function syncOnce(
             (result?.status ? ` (${result.status})` : ""),
         );
       } catch (error) {
+        if (invalidDeviceToken(error)) throw error;
         telemetryFailed += 1;
         log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
       }
@@ -425,5 +565,6 @@ export async function syncOnce(
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
+    serverReconciled: serverAuthority,
   };
 }
