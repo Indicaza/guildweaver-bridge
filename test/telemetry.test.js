@@ -5,12 +5,20 @@ import test from "node:test";
 import {
   normalizeTelemetryRecord,
   telemetryIdempotencyKey,
+  telemetryPayloadFingerprint,
   telemetryTransportBody,
 } from "../src/telemetry.js";
 
 const envelope = JSON.parse(
   fs.readFileSync(
     new URL("../fixtures/telemetry/character_snapshot.v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+const modularDomains = JSON.parse(
+  fs.readFileSync(
+    new URL("../fixtures/telemetry/modular_domains.v1.json", import.meta.url),
     "utf8",
   ),
 );
@@ -41,6 +49,59 @@ test("passes normalized character schema v3 through without domain-specific rewr
   assert.equal(body.kind, "state");
   assert.equal(body.revision, 4);
   assert.deepEqual(body.envelope, envelope);
+});
+
+test("passes each modular telemetry domain through as opaque payload data", () => {
+  for (const [eventType, domainEnvelope] of Object.entries(modularDomains)) {
+    const record = normalizeTelemetryRecord(`${eventType}:character-rook`, {
+      kind: "state",
+      revision: 2,
+      envelope: domainEnvelope,
+    });
+
+    assert.equal(record.envelope.eventType, eventType);
+    assert.equal(record.envelope.payloadSchemaVersion, 1);
+    assert.deepEqual(record.envelope.payload, domainEnvelope.payload);
+    assert.deepEqual(telemetryTransportBody(record).envelope.payload, domainEnvelope.payload);
+    assert.match(record.fingerprint, /^[a-f0-9]{64}$/);
+  }
+});
+
+test("preserves future envelope metadata without interpreting it", () => {
+  const domainEnvelope = {
+    ...structuredClone(modularDomains.character),
+    producer: { channel: "test", capabilities: ["future-field"] },
+  };
+
+  const record = normalizeTelemetryRecord("character:character-rook", {
+    kind: "state",
+    revision: 1,
+    envelope: domainEnvelope,
+  });
+
+  assert.deepEqual(record.envelope.producer, domainEnvelope.producer);
+  assert.deepEqual(record.envelope.addon, domainEnvelope.addon);
+});
+
+test("computes a stable generic fingerprint when the producer does not provide one", () => {
+  const left = { schemaVersion: 1, nested: { b: 2, a: 1 } };
+  const right = { nested: { a: 1, b: 2 }, schemaVersion: 1 };
+
+  assert.equal(telemetryPayloadFingerprint(left), telemetryPayloadFingerprint(right));
+
+  const record = normalizeTelemetryRecord("stats:character-rook", {
+    revision: 1,
+    envelope: {
+      schemaVersion: 1,
+      eventType: "stats",
+      capturedAt: 123,
+      characterId: "character-rook",
+      payloadSchemaVersion: 1,
+      payload: left,
+    },
+  });
+
+  assert.equal(record.fingerprint, telemetryPayloadFingerprint(left));
 });
 
 test("passes generic definition streams through unchanged", () => {
@@ -139,6 +200,21 @@ test("rejects malformed and unsupported telemetry without throwing on partial pa
         envelope: { ...envelope, payload: null },
       }),
     /payload must be an object/,
+  );
+
+  assert.throws(
+    () =>
+      normalizeTelemetryRecord("future_event:fixture", {
+        revision: 1,
+        envelope: {
+          schemaVersion: 1,
+          eventType: "future_event",
+          capturedAt: 123,
+          payloadSchemaVersion: 0,
+          payload: { safelyPartial: true },
+        },
+      }),
+    /invalid payloadSchemaVersion/,
   );
 
   const partial = normalizeTelemetryRecord("future_event:fixture", {
