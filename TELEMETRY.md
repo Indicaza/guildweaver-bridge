@@ -75,6 +75,8 @@ When `telemetryEndpoint` is absent, generic records remain deferred and unacknow
 
 `fixtures/telemetry/profession_snapshot.v1.json` (and `fixtures/savedvariables/profession_snapshot.lua`, the same stream as the addon writes it) is the sample `profession_snapshot` stream: profession identity, skill values, and a recipe book with a crafted item, reagents, and a cooldown. The bridge passes it through unchanged like every other event type.
 
+`fixtures/telemetry/inventory_snapshot.v1.json` (and `fixtures/savedvariables/inventory_snapshot.lua`) is the sample `inventory_snapshot` stream: carried containers with occupied slots (`bagId`, `slot`, `itemKey`, `count`), each distinct item described once in `items` (metadata, tooltip, stats, spell), per-`itemId` `totals`, and `money.copper`. An empty bag's `slots` is an empty Lua table, which the parser reads as `{}`; the bridge forwards it as-is and consumers treat it as no slots. Like every other stream, the bridge does not interpret it.
+
 `fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture.
 
 ## Privacy exclusions
