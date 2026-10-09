@@ -73,6 +73,8 @@ When `telemetryEndpoint` is absent, generic records remain deferred and unacknow
 
 `fixtures/telemetry/character_snapshot.v1.json` is the canonical sample payload for website/collector development. It includes equipment, an active talent tree, profession skill data, and a known recipe with reagents.
 
+`fixtures/telemetry/profession_snapshot.v1.json` (and `fixtures/savedvariables/profession_snapshot.lua`, the same stream as the addon writes it) is the sample `profession_snapshot` stream: profession identity, skill values, and a recipe book with a crafted item, reagents, and a cooldown. The bridge passes it through unchanged like every other event type.
+
 `fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture.
 
 ## Privacy exclusions
