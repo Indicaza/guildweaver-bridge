@@ -1,0 +1,79 @@
+{
+  "character": {
+    "schemaVersion": 1,
+    "eventType": "character",
+    "capturedAt": 1791322510,
+    "characterId": "character-rook",
+    "installationId": "install-fixture",
+    "realm": "Darkwing",
+    "region": "US",
+    "gameBuild": { "version": "1.60.1", "build": "70235", "interface": 16001 },
+    "addon": { "name": "Guildweaver", "version": "0.5.0-alpha.1" },
+    "payloadSchemaVersion": 1,
+    "payload": {
+      "schemaVersion": 1,
+      "name": "Rook",
+      "realm": "Darkwing",
+      "region": "US",
+      "level": 20,
+      "class": { "id": 1, "name": "Warrior", "token": "WARRIOR" },
+      "race": { "id": 4, "name": "Night Elf", "token": "NightElf" }
+    }
+  },
+  "stats": {
+    "schemaVersion": 1,
+    "eventType": "stats",
+    "capturedAt": 1791322510,
+    "characterId": "character-rook",
+    "installationId": "install-fixture",
+    "realm": "Darkwing",
+    "region": "US",
+    "payloadSchemaVersion": 1,
+    "payload": {
+      "schemaVersion": 1,
+      "stats": { "schemaVersion": 1, "attributes": { "strength": { "effective": 83 } } }
+    }
+  },
+  "equipment": {
+    "schemaVersion": 1,
+    "eventType": "equipment",
+    "capturedAt": 1791322510,
+    "characterId": "character-rook",
+    "installationId": "install-fixture",
+    "realm": "Darkwing",
+    "region": "US",
+    "payloadSchemaVersion": 1,
+    "payload": {
+      "schemaVersion": 1,
+      "equipment": [{ "slot": "main_hand", "itemId": 5191, "itemLevel": 18 }]
+    }
+  },
+  "professions": {
+    "schemaVersion": 1,
+    "eventType": "professions",
+    "capturedAt": 1791322510,
+    "characterId": "character-rook",
+    "installationId": "install-fixture",
+    "realm": "Darkwing",
+    "region": "US",
+    "payloadSchemaVersion": 1,
+    "payload": {
+      "schemaVersion": 1,
+      "professions": [{ "skillLineId": 164, "name": "Blacksmithing", "skillLevel": 150 }]
+    }
+  },
+  "talents": {
+    "schemaVersion": 1,
+    "eventType": "talents",
+    "capturedAt": 1791322510,
+    "characterId": "character-rook",
+    "installationId": "install-fixture",
+    "realm": "Darkwing",
+    "region": "US",
+    "payloadSchemaVersion": 1,
+    "payload": {
+      "schemaVersion": 1,
+      "talents": { "api": "legacy", "pointsSpent": 11, "allocations": [{ "nodeId": 1, "rank": 5 }] }
+    }
+  }
+}
