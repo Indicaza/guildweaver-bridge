@@ -16,6 +16,34 @@ function validTimestamp(value) {
   );
 }
 
+function appendStable(parts, value) {
+  if (Array.isArray(value)) {
+    parts.push("[");
+    for (const entry of value) appendStable(parts, entry);
+    parts.push("]");
+    return;
+  }
+
+  if (value && typeof value === "object") {
+    parts.push("{");
+    for (const key of Object.keys(value).sort()) {
+      parts.push(JSON.stringify(key), ":");
+      appendStable(parts, value[key]);
+      parts.push(",");
+    }
+    parts.push("}");
+    return;
+  }
+
+  parts.push(JSON.stringify(value));
+}
+
+export function telemetryPayloadFingerprint(payload) {
+  const parts = [];
+  appendStable(parts, payload);
+  return crypto.createHash("sha256").update(parts.join("")).digest("hex");
+}
+
 export function normalizeTelemetryRecord(streamKey, record) {
   if (typeof streamKey !== "string" || !streamKey.trim()) {
     throw new Error("Telemetry stream key must be a non-empty string");
@@ -63,9 +91,17 @@ export function normalizeTelemetryRecord(streamKey, record) {
     throw new Error(`Telemetry ${streamKey} payload must be an object`);
   }
 
+  if (
+    envelope.payloadSchemaVersion !== undefined &&
+    (!Number.isInteger(Number(envelope.payloadSchemaVersion)) || Number(envelope.payloadSchemaVersion) < 1)
+  ) {
+    throw new Error(`Telemetry ${streamKey} has an invalid payloadSchemaVersion`);
+  }
+
   const sessionId = optionalString(envelope.sessionId);
   const checkpoint = optionalString(envelope.checkpoint);
   const normalizedEnvelope = {
+    ...envelope,
     schemaVersion: TELEMETRY_SCHEMA_VERSION,
     eventType,
     capturedAt: envelope.capturedAt,
@@ -87,7 +123,8 @@ export function normalizeTelemetryRecord(streamKey, record) {
     streamKey: streamKey.trim(),
     kind,
     revision,
-    fingerprint: optionalString(record.fingerprint),
+    fingerprint:
+      optionalString(record.fingerprint) || telemetryPayloadFingerprint(envelope.payload),
     updatedAt: record.updatedAt ?? envelope.capturedAt,
     envelope: normalizedEnvelope,
   };
