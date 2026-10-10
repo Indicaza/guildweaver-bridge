@@ -139,3 +139,34 @@ test("forwards an empty bag's slots exactly as the SavedVariables parser reads t
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("resends a stream whose revision counter was reset with new content", async () => {
+  const { directory, config } = setup();
+  const bodies = [];
+  try {
+    const fetchImpl = async (url, options) => {
+      if (url === config.telemetryEndpoint) bodies.push({ body: JSON.parse(options.body), key: options.headers["Idempotency-Key"] });
+      return new Response(JSON.stringify({ status: "accepted" }), { status: 200 });
+    };
+    assert.equal((await syncOnce(config, { fetchImpl, log: () => {} })).telemetrySent, 1);
+
+    // The addon's SavedVariables were wiped: the stream restarts at revision 1
+    // with different contents.
+    const source = fs.readFileSync(config.savedVariablesPath, "utf8")
+      .replace('["revision"] = 3', '["revision"] = 1')
+      .replace('["fingerprint"] = "9c41d2e0"', '["fingerprint"] = "0badf00d"')
+      .replace('["copper"] = 1234567', '["copper"] = 7654321');
+    fs.writeFileSync(config.savedVariablesPath, source);
+
+    const afterReset = await syncOnce(config, { fetchImpl, log: () => {} });
+    assert.equal(afterReset.telemetrySent, 1, "new content at an old revision is sent");
+    assert.equal(bodies.at(-1).body.revision, 1);
+    assert.equal(bodies.at(-1).body.envelope.payload.money.copper, 7654321);
+    assert.notEqual(bodies.at(-1).key, bodies[0].key, "a distinct idempotency key");
+
+    const again = await syncOnce(config, { fetchImpl, log: () => {} });
+    assert.equal(again.telemetrySent, 0, "and only once");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

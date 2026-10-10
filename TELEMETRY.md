@@ -65,7 +65,7 @@ Headers:
 - `Content-Type: application/json`
 - `Idempotency-Key: gw-<sha256>`
 
-The idempotency key is stable for the same stream revision. The bridge only records a telemetry revision as sent after a successful HTTP response. Network/server failures leave the record queued for the next polling cycle. A collector should also enforce idempotency server-side because reinstalling or moving a SavedVariables file can legitimately cause a client retry.
+The idempotency key is stable for the same stream revision and content (it includes the payload fingerprint). A revision at or below the last one sent is skipped unless its content differs from what was sent: that means the addon's revision counter was reset (SavedVariables wiped, or a pruned stream recreated), and the record is sent so the website never freezes on the old content. The website accepts newer content at a reused revision. The bridge only records a telemetry revision as sent after a successful HTTP response. Network/server failures leave the record queued for the next polling cycle. A collector should also enforce idempotency server-side because reinstalling or moving a SavedVariables file can legitimately cause a client retry.
 
 When `telemetryEndpoint` is absent, generic records remain deferred and unacknowledged while the existing website character sync continues normally.
 
