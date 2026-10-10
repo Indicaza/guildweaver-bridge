@@ -4,7 +4,6 @@ import test from "node:test";
 
 import {
   assertSupportedSavedVariablesSchema,
-  outboundCharacters,
   outboundTelemetry,
   parseSavedVariables,
   savedVariablesSchemaVersion,
@@ -53,8 +52,7 @@ const schema4Fixture = fs.readFileSync(
 
 test("parses legacy Guildweaver SavedVariables without executing Lua", () => {
   const database = parseSavedVariables(fixture);
-  const outbound = outboundCharacters(database);
-  const envelope = outbound["classic beta pve 2:rook"];
+  const envelope = database.sync.outbound.characters["classic beta pve 2:rook"];
 
   assert.equal(savedVariablesSchemaVersion(database), 2);
   assert.equal(assertSupportedSavedVariablesSchema(database), 2);

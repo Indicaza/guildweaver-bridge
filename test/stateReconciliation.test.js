@@ -61,7 +61,7 @@ function savedVariables() {
   }`;
 }
 
-test("reconciliation replays current character and state telemetry but not historical events", async () => {
+test("reconciliation replays current state telemetry but not historical events", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-reconcile-"));
   const savedVariablesPath = path.join(directory, "Guildweaver.lua");
   const statePath = path.join(directory, "bridge-state.json");
@@ -71,7 +71,6 @@ test("reconciliation replays current character and state telemetry but not histo
   fs.writeFileSync(
     statePath,
     `${JSON.stringify({
-      sentRevisions: { [`${prefix}::realm:rook`]: 7 },
       sentTelemetryRevisions: {
         [`${prefix}::telemetry:talent_tree_definition:warrior`]: 4,
         [`${prefix}::telemetry:loot_event:rook:1`]: 2,
@@ -112,7 +111,6 @@ test("reconciliation replays current character and state telemetry but not histo
       log: () => {},
       now: () => 1000,
     });
-    assert.equal(normal.sent, 0);
     assert.equal(normal.telemetrySent, 0);
     assert.equal(requests.length, 0);
 
@@ -124,20 +122,15 @@ test("reconciliation replays current character and state telemetry but not histo
     });
 
     assert.equal(reconciled.reconciledState, true);
-    assert.equal(reconciled.sent, 1);
     assert.equal(reconciled.telemetrySent, 1);
     assert.equal(reconciled.telemetrySkipped, 1);
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 1, "the retired character mailbox is not replayed");
     assert.equal(
       requests[0].url,
-      "https://holdfast.example/api/bridge/characters/snapshot",
-    );
-    assert.equal(
-      requests[1].url,
       "https://holdfast.example/api/bridge/telemetry",
     );
 
-    const telemetryBody = JSON.parse(requests[1].options.body);
+    const telemetryBody = JSON.parse(requests[0].options.body);
     assert.equal(telemetryBody.kind, "state");
     assert.equal(telemetryBody.streamKey, "talent_tree_definition:warrior");
   } finally {

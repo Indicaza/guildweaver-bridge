@@ -274,16 +274,6 @@ export function assertSupportedSavedVariablesSchema(database) {
   return version;
 }
 
-export function outboundCharacters(database) {
-  const characters = database?.sync?.outbound?.characters;
-
-  if (!characters || typeof characters !== "object" || Array.isArray(characters)) {
-    return {};
-  }
-
-  return characters;
-}
-
 export function outboundTelemetry(database) {
   const telemetry = database?.sync?.outbound?.telemetry;
 
