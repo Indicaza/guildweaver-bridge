@@ -30,7 +30,7 @@ function savedVariables(revision = 3) {
   }`;
 }
 
-test("posts each outbound revision once with the paired device credential", async () => {
+test("ignores the retired character mailbox", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-bridge-"));
   const savedVariablesPath = path.join(directory, "Guildweaver.lua");
   const statePath = path.join(directory, "state.json");
@@ -56,58 +56,9 @@ test("posts each outbound revision once with the paired device credential", asyn
   };
 
   try {
-    const first = await syncOnce(config, { fetchImpl, log: () => {} });
-    const second = await syncOnce(config, { fetchImpl, log: () => {} });
-
-    assert.equal(first.sent, 1);
-    assert.equal(second.sent, 0);
-    assert.equal(requests.length, 1);
-    assert.equal(
-      requests[0].url,
-      "https://holdfast.example/api/bridge/characters/snapshot",
-    );
-    assert.equal(requests[0].options.headers.Authorization, "Bearer gwd_secret");
-
-    const body = JSON.parse(requests[0].options.body);
-    assert.equal("memberId" in body, false);
-    assert.equal(body.revision, 3);
-    assert.equal(body.snapshot.name, "Rook");
-
-    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
-    assert.equal(Object.values(state.sentRevisions)[0], 3);
-  } finally {
-    fs.rmSync(directory, { recursive: true, force: true });
-  }
-});
-
-test("does not acknowledge a revision when the website rejects the device", async () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-bridge-"));
-  const savedVariablesPath = path.join(directory, "Guildweaver.lua");
-  const statePath = path.join(directory, "state.json");
-  fs.writeFileSync(savedVariablesPath, savedVariables(), "utf8");
-
-  const config = {
-    holdfastUrl: "https://holdfast.example",
-    deviceToken: "gwd_secret",
-    savedVariablesPath,
-    wowRoot: null,
-    pollIntervalMs: 3000,
-    questSyncIntervalMs: Number.MAX_SAFE_INTEGER,
-    statePath,
-  };
-
-  try {
-    await assert.rejects(
-      syncOnce(config, {
-        fetchImpl: async () =>
-          new Response(JSON.stringify({ error: "invalid_device_token" }), {
-            status: 401,
-          }),
-        log: () => {},
-      }),
-      /invalid_device_token/,
-    );
-    assert.equal(fs.existsSync(statePath), false);
+    const result = await syncOnce(config, { fetchImpl, log: () => {} });
+    assert.equal(result.telemetryDiscovered, 0);
+    assert.equal(requests.length, 0, "whole snapshots are no longer posted");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

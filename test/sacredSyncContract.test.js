@@ -19,6 +19,7 @@ function luaRecord({
   reason = "PLAYER_LOGOUT",
   sectionStatus = "unavailable",
   revision = 7,
+  streamId = characterId,
 } = {}) {
   return `GuildweaverDB = {
     ["schemaVersion"] = 4,
@@ -54,7 +55,7 @@ function luaRecord({
           },
         },
         ["telemetry"] = {
-          ["character_session:${characterId}:session:end"] = {
+          ["character_session:${streamId}:session:end"] = {
             ["kind"] = "event",
             ["revision"] = ${revision},
             ["fingerprint"] = "cafebabe",
@@ -99,7 +100,7 @@ function configFor(directory, overrides = {}) {
   };
 }
 
-test("preserves character identity and completeness metadata byte-for-byte across both transports", async () => {
+test("preserves character identity and completeness metadata byte-for-byte through telemetry", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-sacred-contract-"));
   const savedVariablesPath = path.join(directory, "Guildweaver.lua");
   fs.writeFileSync(savedVariablesPath, luaRecord(), "utf8");
@@ -115,33 +116,25 @@ test("preserves character identity and completeness metadata byte-for-byte acros
       log: () => {},
     });
 
-    assert.equal(result.sent, 1);
     assert.equal(result.telemetrySent, 1);
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 1, "the retired character mailbox is not posted");
 
-    const character = requests.find((entry) => entry.url.endsWith("/characters/snapshot"));
     const telemetry = requests.find((entry) => entry.url.endsWith("/telemetry"));
-    assert.ok(character);
     assert.ok(telemetry);
-
-    assert.equal(character.body.snapshot.characterId, "character-rook-pc");
-    assert.equal(character.body.snapshot.installationId, "install-pc");
-    assert.equal(character.body.snapshot.capture.integrityVersion, 1);
-    assert.equal(character.body.snapshot.capture.reason, "PLAYER_LOGOUT");
-    assert.equal(character.body.snapshot.capture.sections.equipment, "unavailable");
-    assert.equal(character.body.snapshot.capture.sections.recipes, "unavailable");
 
     assert.equal(telemetry.body.envelope.characterId, "character-rook-pc");
     assert.equal(telemetry.body.envelope.installationId, "install-pc");
     assert.equal(telemetry.body.envelope.payload.characterId, "character-rook-pc");
     assert.equal(telemetry.body.envelope.payload.installationId, "install-pc");
+    assert.equal(telemetry.body.envelope.payload.capture.integrityVersion, 1);
+    assert.equal(telemetry.body.envelope.payload.capture.reason, "PLAYER_LOGOUT");
     assert.equal(telemetry.body.envelope.payload.capture.sections.equipment, "unavailable");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("SavedVariables files are independent delivery queues and can never dedupe each other by character key", async () => {
+test("SavedVariables files are independent delivery queues and can never dedupe each other by stream key", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-sacred-multifile-"));
   const wowRoot = path.join(directory, "_classic_beta_");
   const accountRoot = path.join(wowRoot, "WTF", "Account");
@@ -149,20 +142,17 @@ test("SavedVariables files are independent delivery queues and can never dedupe 
   const macPath = path.join(accountRoot, "MAC", "SavedVariables", "Guildweaver.lua");
   fs.mkdirSync(path.dirname(pcPath), { recursive: true });
   fs.mkdirSync(path.dirname(macPath), { recursive: true });
-  fs.writeFileSync(pcPath, luaRecord({ characterId: "rook-pc", installationId: "install-pc", reason: "PLAYER_EQUIPMENT_CHANGED", sectionStatus: "complete" }), "utf8");
-  fs.writeFileSync(macPath, luaRecord({ characterId: "rook-mac", installationId: "install-mac", reason: "PLAYER_ENTERING_WORLD", sectionStatus: "partial" }), "utf8");
+  fs.writeFileSync(pcPath, luaRecord({ characterId: "rook-pc", installationId: "install-pc", reason: "PLAYER_EQUIPMENT_CHANGED", sectionStatus: "complete", streamId: "rook" }), "utf8");
+  fs.writeFileSync(macPath, luaRecord({ characterId: "rook-mac", installationId: "install-mac", reason: "PLAYER_ENTERING_WORLD", sectionStatus: "partial", streamId: "rook" }), "utf8");
 
-  const config = configFor(directory, {
-    wowRoot,
-    telemetryEndpoint: null,
-  });
-  const snapshots = [];
+  const config = configFor(directory, { wowRoot });
+  const envelopes = [];
 
   try {
     const first = await syncOnce(config, {
       fetchImpl: async (url, options) => {
-        assert.ok(url.endsWith("/characters/snapshot"));
-        snapshots.push(JSON.parse(options.body).snapshot);
+        assert.ok(url.endsWith("/telemetry"));
+        envelopes.push(JSON.parse(options.body).envelope);
         return ok();
       },
       log: () => {},
@@ -175,21 +165,22 @@ test("SavedVariables files are independent delivery queues and can never dedupe 
     });
 
     assert.equal(first.files, 2);
-    assert.equal(first.sent, 2);
-    assert.equal(second.sent, 0);
+    assert.equal(first.telemetrySent, 2);
+    assert.equal(second.telemetrySent, 0);
     assert.deepEqual(
-      snapshots.map((entry) => entry.characterId).sort(),
+      envelopes.map((entry) => entry.characterId).sort(),
       ["rook-mac", "rook-pc"],
     );
     assert.deepEqual(
-      snapshots.map((entry) => entry.installationId).sort(),
+      envelopes.map((entry) => entry.installationId).sort(),
       ["install-mac", "install-pc"],
     );
 
     const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
-    assert.equal(Object.keys(state.sentRevisions).length, 2);
-    assert.ok(Object.keys(state.sentRevisions).some((key) => key.includes(path.resolve(pcPath))));
-    assert.ok(Object.keys(state.sentRevisions).some((key) => key.includes(path.resolve(macPath))));
+    const sent = Object.keys(state.sentTelemetryRevisions);
+    assert.equal(sent.length, 2);
+    assert.ok(sent.some((key) => key.includes(path.resolve(pcPath))));
+    assert.ok(sent.some((key) => key.includes(path.resolve(macPath))));
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

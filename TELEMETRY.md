@@ -32,21 +32,21 @@ Every generic record uses:
 - optional anonymous `guildId`
 - `payload`
 
-The first event type is `character_snapshot`. The envelope is deliberately open to future event types such as `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `profession_snapshot`, `gathering_loot`, `vendor_seen`, and `boss_killed` without changing the bridge parser.
+Character data arrives as one stream per data type: `character`, `stats`, `equipment`, `talents`, `professions`, `profession_snapshot` and `inventory_snapshot`. Older addons also sent a whole `character_snapshot` stream, which the bridge still forwards unchanged. The envelope is deliberately open to future event types such as `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `profession_snapshot`, `gathering_loot`, `vendor_seen`, and `boss_killed` without changing the bridge parser.
 
 ## Transport
 
-The bridge continues to POST character snapshots to the existing paired website character endpoint for backward compatibility.
+Every record goes through the telemetry endpoint. The bridge no longer posts whole character snapshots to `/api/bridge/characters/snapshot`; the `sync.outbound.characters` mailbox older addons write is ignored.
 
 Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. When configured, the bridge sends:
 
 ```json
 {
-  "streamKey": "character_snapshot:character-...",
+  "streamKey": "character:character-...",
   "revision": 3,
   "envelope": {
     "schemaVersion": 1,
-    "eventType": "character_snapshot",
+    "eventType": "character",
     "capturedAt": 1791242820,
     "gameBuild": {},
     "realm": "Realm",
@@ -67,11 +67,11 @@ Headers:
 
 The idempotency key is stable for the same stream revision and content (it includes the payload fingerprint). A revision at or below the last one sent is skipped unless its content differs from what was sent: that means the addon's revision counter was reset (SavedVariables wiped, or a pruned stream recreated), and the record is sent so the website never freezes on the old content. The website accepts newer content at a reused revision. The bridge only records a telemetry revision as sent after a successful HTTP response. Network/server failures leave the record queued for the next polling cycle. A collector should also enforce idempotency server-side because reinstalling or moving a SavedVariables file can legitimately cause a client retry.
 
-When `telemetryEndpoint` is absent, generic records remain deferred and unacknowledged while the existing website character sync continues normally.
+When `telemetryEndpoint` is absent, records remain deferred and unacknowledged. It defaults to `<holdfastUrl>/api/bridge/telemetry`.
 
 ## Shared fixture
 
-`fixtures/telemetry/character_snapshot.v1.json` is the canonical sample payload for website/collector development. It includes equipment, an active talent tree, profession skill data, and a known recipe with reagents.
+`fixtures/telemetry/character_snapshot.v1.json` is the sample whole-snapshot payload older addons send. It includes equipment, an active talent tree, profession skill data, and a known recipe with reagents.
 
 `fixtures/telemetry/profession_snapshot.v1.json` (and `fixtures/savedvariables/profession_snapshot.lua`, the same stream as the addon writes it) is the sample `profession_snapshot` stream: profession identity, skill values, and a recipe book with a crafted item, reagents, and a cooldown. The bridge passes it through unchanged like every other event type.
 

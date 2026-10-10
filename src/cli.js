@@ -305,13 +305,12 @@ async function main() {
       if (shouldReconcile) lastStateReconcileAt = Date.now();
 
       if (
-        result.sent > 0 ||
         result.telemetrySent > 0 ||
         shouldReconcile ||
         command === "once"
       ) {
         console.log(
-          `Scan complete: ${result.files} file(s), ${result.sent} character snapshot(s), ${result.telemetrySent} telemetry record(s), ${result.skipped + result.telemetrySkipped} skipped${shouldReconcile ? ", state reconciled" : ""}.`,
+          `Scan complete: ${result.files} file(s), ${result.telemetrySent} telemetry record(s), ${result.telemetrySkipped} skipped${shouldReconcile ? ", state reconciled" : ""}.`,
         );
       }
       return true;

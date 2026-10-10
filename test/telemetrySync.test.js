@@ -50,20 +50,18 @@ test("sends generic telemetry once with an idempotency key across paths with spa
   try {
     const fetchImpl = async (url, options) => {
       requests.push({ url, options });
-      return ok(url.includes("characters/snapshot") ? { status: "updated" } : undefined);
+      return ok();
     };
 
     const first = await syncOnce(config, { fetchImpl, log: () => {} });
     const second = await syncOnce(config, { fetchImpl, log: () => {} });
 
-    assert.equal(first.sent, 1);
     assert.equal(first.telemetryDiscovered, 1);
     assert.equal(first.telemetrySent, 1);
     assert.equal(first.telemetryFailed, 0);
-    assert.equal(second.sent, 0);
     assert.equal(second.telemetrySent, 0);
     assert.equal(second.telemetrySkipped, 1);
-    assert.equal(requests.length, 2);
+    assert.equal(requests.length, 1, "the retired character mailbox is never posted");
 
     const telemetryRequest = requests.find(
       (request) => request.url === "https://collector.example/v1/telemetry",
@@ -93,7 +91,6 @@ test("acknowledges a newer state revision without reposting an unchanged fingerp
   fs.writeFileSync(
     config.statePath,
     JSON.stringify({
-      sentRevisions: {},
       sentTelemetryRevisions: { [telemetryKey]: 2 },
       sentTelemetryFingerprints: { [telemetryKey]: "09def876" },
       questActions: {},
@@ -107,14 +104,14 @@ test("acknowledges a newer state revision without reposting an unchanged fingerp
     const result = await syncOnce(config, {
       fetchImpl: async (url) => {
         requests.push(url);
-        return ok(url.includes("characters/snapshot") ? { status: "updated" } : undefined);
+        return ok();
       },
       log: () => {},
     });
 
     assert.equal(result.telemetrySent, 0);
     assert.equal(result.telemetrySkipped, 1);
-    assert.deepEqual(requests, ["https://holdfast.example/api/bridge/characters/snapshot"]);
+    assert.deepEqual(requests, []);
 
     const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
     assert.equal(state.sentTelemetryRevisions[telemetryKey], 3);
@@ -124,7 +121,7 @@ test("acknowledges a newer state revision without reposting an unchanged fingerp
   }
 });
 
-test("keeps telemetry queued while offline and retries without duplicating legacy character delivery", async () => {
+test("keeps telemetry queued while offline and never posts the retired character mailbox", async () => {
   const { directory, config } = setup();
   let telemetryOnline = false;
   let legacyPosts = 0;
@@ -145,20 +142,18 @@ test("keeps telemetry queued while offline and retries without duplicating legac
     };
 
     const first = await syncOnce(config, { fetchImpl, log: () => {} });
-    assert.equal(first.sent, 1);
     assert.equal(first.telemetrySent, 0);
     assert.equal(first.telemetryFailed, 1);
-    assert.equal(legacyPosts, 1);
+    assert.equal(legacyPosts, 0);
     assert.equal(telemetryPosts, 1);
+    assert.equal(fs.existsSync(config.statePath), false, "nothing acknowledged while offline");
 
-    let state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
-    assert.equal(Object.keys(state.sentTelemetryRevisions).length, 0);
+    let state;
 
     telemetryOnline = true;
     const second = await syncOnce(config, { fetchImpl, log: () => {} });
-    assert.equal(second.sent, 0);
     assert.equal(second.telemetrySent, 1);
-    assert.equal(legacyPosts, 1);
+    assert.equal(legacyPosts, 0);
     assert.equal(telemetryPosts, 2);
 
     state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
@@ -185,10 +180,8 @@ test("defers the generic outbox without acknowledging it when no ingestion endpo
     assert.equal(result.telemetryDiscovered, 1);
     assert.equal(result.telemetryDeferred, 1);
     assert.equal(result.telemetrySent, 0);
-    assert.deepEqual(requests, ["https://holdfast.example/api/bridge/characters/snapshot"]);
-
-    const state = JSON.parse(fs.readFileSync(config.statePath, "utf8"));
-    assert.equal(Object.keys(state.sentTelemetryRevisions).length, 0);
+    assert.deepEqual(requests, []);
+    assert.equal(fs.existsSync(config.statePath), false, "the deferred outbox is not acknowledged");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
