@@ -138,6 +138,10 @@ export function telemetryIdempotencyKey(record) {
     installationId: record.envelope.installationId,
     characterId: record.envelope.characterId,
     eventType: record.envelope.eventType,
+    // A reset revision counter reuses revision numbers with new content; the
+    // fingerprint keeps those distinct while retries of the same content
+    // still share a key.
+    fingerprint: record.fingerprint,
   });
 
   return `gw-${crypto.createHash("sha256").update(stableIdentity).digest("hex")}`;

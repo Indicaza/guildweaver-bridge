@@ -18,11 +18,21 @@ import {
 function emptyState() {
   return {
     sentRevisions: {},
+    sentFingerprints: {},
     sentTelemetryRevisions: {},
     sentTelemetryFingerprints: {},
     questActions: {},
     lastQuestSyncAt: 0,
   };
+}
+
+// A revision at or below the last one sent normally means "already sent".
+// When its content differs from what was sent, the addon's counter was reset
+// (SavedVariables wiped, or a pruned stream recreated at revision 1), and
+// skipping it would freeze that stream on the website until the counter
+// caught up again.
+function revisionReset(fingerprint, sentFingerprint) {
+  return Boolean(fingerprint && sentFingerprint && fingerprint !== sentFingerprint);
 }
 
 function readState(statePath) {
@@ -36,6 +46,10 @@ function readState(statePath) {
       sentRevisions:
         parsed?.sentRevisions && typeof parsed.sentRevisions === "object"
           ? parsed.sentRevisions
+          : {},
+      sentFingerprints:
+        parsed?.sentFingerprints && typeof parsed.sentFingerprints === "object"
+          ? parsed.sentFingerprints
           : {},
       sentTelemetryRevisions:
         parsed?.sentTelemetryRevisions &&
@@ -255,8 +269,9 @@ export async function syncOnce(
 
       const key = stateKey(filePath, characterKey);
       const previousRevision = Number(state.sentRevisions[key]) || 0;
+      const fingerprint = typeof envelope?.fingerprint === "string" ? envelope.fingerprint : "";
 
-      if (!reconcileState && previousRevision >= revision) {
+      if (!reconcileState && previousRevision >= revision && !revisionReset(fingerprint, state.sentFingerprints[key])) {
         skipped += 1;
         continue;
       }
@@ -264,6 +279,7 @@ export async function syncOnce(
       try {
         const result = await postSnapshot(config, envelope, fetchImpl);
         state.sentRevisions[key] = revision;
+        if (fingerprint) state.sentFingerprints[key] = fingerprint;
         writeState(config.statePath, state);
         sent += 1;
 
@@ -296,7 +312,11 @@ export async function syncOnce(
       const previousRevision = Number(state.sentTelemetryRevisions[key]) || 0;
       const forceStateReplay = reconcileState && record.kind === "state";
 
-      if (!forceStateReplay && previousRevision >= record.revision) {
+      if (
+        !forceStateReplay &&
+        previousRevision >= record.revision &&
+        !(record.kind === "state" && revisionReset(record.fingerprint, state.sentTelemetryFingerprints[key]))
+      ) {
         telemetrySkipped += 1;
         continue;
       }
