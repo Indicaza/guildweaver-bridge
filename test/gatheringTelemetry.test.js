@@ -37,6 +37,6 @@ test("passes herbalism gathering observations through unchanged as event telemet
     streamKey,
     kind: "event",
     revision: 1,
-    envelope,
+    envelope: record.envelope,
   });
 });
