@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "eventType": "gathering_loot",
+  "capturedAt": 1791761400,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "70338",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-fixture",
+  "characterId": "character-rook",
+  "addon": {
+    "name": "Guildweaver",
+    "version": "0.5.0-alpha.1"
+  },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "activity": "harvest",
+    "discipline": "herbalism",
+    "observationId": "fixture-herb-1",
+    "source": {
+      "kind": "herb_node",
+      "name": "Peacebloom",
+      "guid": "GameObject-0-1-2-3-1618-000001",
+      "objectId": 1618,
+      "guidKind": "GameObject"
+    },
+    "outputs": [
+      {
+        "itemId": 2447,
+        "itemLink": "item:2447",
+        "name": "Peacebloom",
+        "quantity": 2,
+        "qualityId": 1,
+        "iconFileDataId": 134183
+      },
+      {
+        "itemId": 249399,
+        "itemLink": "item:249399",
+        "name": "Frilled Lichen",
+        "quantity": 1,
+        "qualityId": 2
+      }
+    ],
+    "context": {
+      "attemptedAt": 1791761398,
+      "characterLevel": 30,
+      "profession": {
+        "skillLineId": 182,
+        "name": "Herbalism",
+        "skillLevel": 87,
+        "maxSkillLevel": 150,
+        "skillModifier": 5
+      },
+      "modifiers": {
+        "bountifulHarvest": {
+          "spellId": 1225435,
+          "rank": 3,
+          "maxRanks": 5,
+          "configId": 77,
+          "configName": "Legacy Professions",
+          "treeId": 88,
+          "nodeId": 99,
+          "entryId": 100
+        }
+      },
+      "location": {
+        "mapId": 1431,
+        "zone": "Duskwood",
+        "subzone": "The Rotting Orchard",
+        "x": 0.42,
+        "y": 0.58
+      },
+      "trigger": {
+        "spellId": 2366,
+        "spellName": "Herbalism",
+        "castGuid": "Cast-1"
+      }
+    },
+    "capture": {
+      "lootSlotCount": 2,
+      "sourceCount": 1
+    }
+  }
+}

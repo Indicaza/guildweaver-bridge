@@ -8,14 +8,17 @@ SavedVariables schema 4 adds:
 
 `GuildweaverDB.sync.outbound.telemetry[streamKey]`
 
-Each stream contains only its newest snapshot revision:
+Each record contains:
 
+- `kind` (`state` or `event`)
 - `revision`
 - `updatedAt`
 - `fingerprint`
 - `envelope`
 
-This keeps SavedVariables bounded. Snapshot captures that have not materially changed do not create a new revision.
+State streams retain only their newest snapshot revision. One-off observations use `kind: event` and a unique stream key so every event can be forwarded independently. The addon's outbound mailbox remains bounded and prunes the oldest event records first when it reaches its limit.
+
+Snapshot captures that have not materially changed do not create a new revision.
 
 ## Envelope schema 1
 
@@ -32,7 +35,15 @@ Every generic record uses:
 - optional anonymous `guildId`
 - `payload`
 
-Character data arrives as one stream per data type: `character`, `stats`, `equipment`, `talents`, `professions`, `profession_snapshot` and `inventory_snapshot`. Older addons also sent a whole `character_snapshot` stream, which the bridge still forwards unchanged. The envelope is deliberately open to future event types such as `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `profession_snapshot`, `gathering_loot`, `vendor_seen`, and `boss_killed` without changing the bridge parser.
+Character data arrives as one stream per data type: `character`, `stats`, `equipment`, `talents`, `professions`, `profession_snapshot` and `inventory_snapshot`. Older addons also sent a whole `character_snapshot` stream, which the bridge still forwards unchanged. The envelope is deliberately open to event types such as `auction_seen`, `item_looted`, `craft_completed`, `recipe_learned`, `gathering_loot`, `vendor_seen`, and `boss_killed` without changing the bridge parser.
+
+### Gathering observations
+
+`gathering_loot` is the first economic observation event. Herbalism emits one event for each successfully opened herb-node loot window. Its payload records the gathering discipline, source identity, all observed outputs, character/profession context, map position, game build, and best-effort economic modifiers such as Bountiful Harvest.
+
+The collector deliberately records ordinary gathers as well as rare results. Consumers can therefore use the full attempt population as the denominator when estimating rare-material drop chances.
+
+The bridge does not identify herbs, calculate drop rates, or reinterpret this payload. Mining, skinning, fishing, and later economic collectors can extend the same observation model while the bridge remains generic.
 
 ## Transport
 
@@ -43,6 +54,7 @@ Generic ingestion is enabled by configuring a full `telemetryEndpoint` URL. When
 ```json
 {
   "streamKey": "character:character-...",
+  "kind": "state",
   "revision": 3,
   "envelope": {
     "schemaVersion": 1,
@@ -69,7 +81,7 @@ The idempotency key is stable for the same stream revision and content (it inclu
 
 When `telemetryEndpoint` is absent, records remain deferred and unacknowledged. It defaults to `<holdfastUrl>/api/bridge/telemetry`.
 
-## Shared fixture
+## Shared fixtures
 
 `fixtures/telemetry/character_snapshot.v1.json` is the sample whole-snapshot payload older addons send. It includes equipment, an active talent tree, profession skill data, and a known recipe with reagents.
 
@@ -77,7 +89,9 @@ When `telemetryEndpoint` is absent, records remain deferred and unacknowledged. 
 
 `fixtures/telemetry/inventory_snapshot.v1.json` (and `fixtures/savedvariables/inventory_snapshot.lua`) is the sample `inventory_snapshot` stream: carried containers with occupied slots (`bagId`, `slot`, `itemKey`, `count`), each distinct item described once in `items` (metadata, tooltip, stats, spell), per-`itemId` `totals`, and `money.copper`. An empty bag's `slots` is an empty Lua table, which the parser reads as `{}`; the bridge forwards it as-is and consumers treat it as no slots. Like every other stream, the bridge does not interpret it.
 
-`fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture.
+`fixtures/telemetry/gathering_loot.v1.json` is a sample Herbalism observation. It includes a Peacebloom node, ordinary Peacebloom output, a Frilled Lichen rare output, Herbalism skill, Bountiful Harvest rank, and location context. The bridge test asserts that the entire payload remains opaque and unchanged in transport.
+
+`fixtures/savedvariables/schema4.lua` is the matching bridge/parser fixture for snapshot transport.
 
 ## Privacy exclusions
 
@@ -89,7 +103,7 @@ The collector does not intentionally collect:
 - chat logs
 - private messages
 
-Installation and character identifiers are generated locally and are not Battle.net account identifiers. Equipment is self-reported from the player's own character. The addon does not inspect-spam other players.
+Installation and character identifiers are generated locally and are not Battle.net account identifiers. Equipment and gathering observations are self-reported from the player's own character. The addon does not inspect-spam other players.
 
 ## WoW API limitations
 
@@ -100,6 +114,8 @@ World of Warcraft: Forever exposes a mixture of modern and legacy APIs. Collecti
 - profession specialization metadata is collected only when `C_ProfSpecs`/trait config APIs are present
 - full recipe catalogs are only available while the profession/tradeskill APIs expose them, normally after the player opens the relevant profession UI
 - recipe collection never opens a profession UI automatically and previously captured recipes are retained between ordinary character snapshots
+- gathering source identity is best-effort: node name comes from the cast target when exposed, while loot-source GUID/object ID comes from the loot APIs when available
+- Bountiful Harvest context is discovered from the Legacy trait configuration when `C_Traits` exposes it; missing trait APIs omit that modifier instead of blocking the observation
 - some item metadata depends on the local item cache; item id/link and parsed link modifiers remain available even when richer cached metadata is temporarily missing
 
 Missing APIs or partial data should reduce payload richness rather than crash the addon or invalidate the bridge record.
