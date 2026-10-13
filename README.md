@@ -280,3 +280,9 @@ Character and quest bridge APIs derive the member from that device credential. T
 Addon and packaged Bridge updates are accepted only after the downloaded artifact matches its published SHA-256 checksum and the staged release metadata matches the expected commit.
 
 Developer self-update is restricted to clean `main` checkouts and fast-forward-only updates from `origin/main`.
+
+## Farming session transport
+
+The bridge forwards envelope-v1 `farming_session` events and gathering `context.farming` / map metadata unchanged. Farming checkpoints use a stable stream key, increasing revisions and payload `sequence`; successful delivery is acknowledged, offline failures are retried with the same idempotency key, and a newer checkpoint/final record is delivered once. No new endpoint, SavedVariables version, pairing permission or timing calculation is required in the bridge.
+
+The contract fixture and integration tests cover measured duration, optional AFK evidence, zero/one coordinates, retry and final-checkpoint delivery. Timing classification and rate eligibility belong to the collector/website. Deploy the website consumer before rolling out the addon producer.

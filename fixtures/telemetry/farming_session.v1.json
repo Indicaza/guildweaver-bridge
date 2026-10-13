@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "eventType": "farming_session",
+  "capturedAt": 1791763200,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "70338",
+    "interface": 16001
+  },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "installationId": "install-fixture",
+  "characterId": "character-rook",
+  "addon": {
+    "name": "Guildweaver",
+    "version": "0.5.0-alpha.1"
+  },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "sessionId": "farm-fixture",
+    "sequence": 3,
+    "mode": "manual",
+    "status": "complete",
+    "endReason": "stopped",
+    "startedAt": 1791761400,
+    "endedAt": 1791763200,
+    "durationSeconds": 1800,
+    "afkAvailable": true,
+    "afkSeconds": 300,
+    "gatheringCount": 10,
+    "classToken": "DRUID",
+    "yieldBasis": "loot_window",
+    "location": {
+      "mapId": 1431,
+      "zone": "Duskwood",
+      "x": 0.42,
+      "y": 0.58,
+      "coordinateSystem": "ui_map_normalized",
+      "positionKind": "player_at_cast"
+    }
+  }
+}
