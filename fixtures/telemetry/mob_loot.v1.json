@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "eventType": "mob_loot",
+  "capturedAt": 1791761400,
+  "gameBuild": { "version": "1.60.1", "build": "70338", "interface": 16001 },
+  "realm": "Classic Beta PvE 2",
+  "region": "US",
+  "locale": "enUS",
+  "installationId": "install-fixture",
+  "characterId": "character-rook",
+  "addon": { "name": "Guildweaver", "version": "0.5.0-alpha.1" },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "observationId": "Creature-0-1-36-3-639-000001",
+    "activity": "corpse_loot",
+    "source": { "guid": "Creature-0-1-36-3-639-000001", "npcId": 639, "name": "Edwin VanCleef", "kind": "creature" },
+    "outputs": [ { "itemId": 2589, "name": "Linen Cloth", "quantity": 3, "qualityId": 1, "iconFileDataId": 132889, "isQuestItem": false } ],
+    "context": {
+      "location": { "mapId": 1436, "zone": "The Deadmines", "x": 0.42567, "y": 0.58765, "coordinateSystem": "ui_map_normalized", "positionKind": "player_at_loot" },
+      "instance": { "instanceId": 36, "name": "The Deadmines", "type": "party", "difficultyId": 1, "difficultyName": "Normal" },
+      "lootMethod": "group"
+    },
+    "capture": { "attribution": "loot_source_pairs", "visibility": "visible_to_observer", "yieldBasis": "loot_window" }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "eventType": "game_item_definition",
+  "capturedAt": 1791761400,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "70338",
+    "interface": 16001
+  },
+  "locale": "enUS",
+  "installationId": "install-fixture",
+  "addon": {
+    "name": "Guildweaver",
+    "version": "0.5.0-alpha.1"
+  },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "basis": "base_item_id",
+    "item": {
+      "itemId": 2589,
+      "name": "Linen Cloth",
+      "qualityId": 1,
+      "iconFileDataId": 132889,
+      "itemClass": {
+        "id": 7,
+        "name": "Trade Goods"
+      },
+      "itemSubclass": {
+        "id": 5,
+        "name": "Cloth"
+      },
+      "stackCount": 20,
+      "sellPrice": 13,
+      "tooltip": {
+        "source": "GameTooltip",
+        "method": "SetHyperlink",
+        "complete": true,
+        "rendered": true,
+        "lines": [
+          {
+            "left": "Linen Cloth"
+          },
+          {
+            "left": "Crafting Reagent"
+          }
+        ]
+      }
+    },
+    "reference": "item:2589"
+  }
+}

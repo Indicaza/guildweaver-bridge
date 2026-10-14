@@ -286,3 +286,9 @@ Developer self-update is restricted to clean `main` checkouts and fast-forward-o
 The bridge forwards envelope-v1 `farming_session` events and gathering `context.farming` / map metadata unchanged. Farming checkpoints use a stable stream key, increasing revisions and payload `sequence`; successful delivery is acknowledged, offline failures are retried with the same idempotency key, and a newer checkpoint/final record is delivered once. No new endpoint, SavedVariables version, pairing permission or timing calculation is required in the bridge.
 
 The contract fixture and integration tests cover measured duration, optional AFK evidence, zero/one coordinates, retry and final-checkpoint delivery. Timing classification and rate eligibility belong to the collector/website. Deploy the website consumer before rolling out the addon producer.
+
+### Mob loot and public game definitions
+
+The bridge carries `mob_loot` event revisions and `game_item_definition` state records through the existing envelope-v1 path without rewriting source GUID allocations, coordinates, locale, visibility, or dungeon/difficulty context. `fixtures/telemetry/mob_loot.v1.json` and `game_item_definition.v1.json` are paired with the website fixtures. Contract tests exercise SavedVariables parsing, failed-upload retry, stable idempotency keys, and later corpse revisions.
+
+A base game definition is separate from an equipped/bag item definition. Public filtering happens at the website's dedicated fact projection; the bridge never makes character uploads public. SavedVariables remains schema 4, and no endpoint configuration change is required. Searching the catalog inside the addon is a later downstream-cache feature; the addon does not make HTTP requests.
