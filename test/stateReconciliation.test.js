@@ -43,6 +43,18 @@ function savedVariables() {
               },
             },
           },
+          ["character_snapshot:character-rook"] = {
+            ["kind"] = "state",
+            ["revision"] = 9,
+            ["fingerprint"] = "character-fingerprint",
+            ["envelope"] = {
+              ["schemaVersion"] = 1,
+              ["eventType"] = "character_snapshot",
+              ["capturedAt"] = 1790000000,
+              ["characterId"] = "character-rook",
+              ["payload"] = { ["name"] = "Rook" },
+            },
+          },
           ["loot_event:rook:1"] = {
             ["kind"] = "event",
             ["revision"] = 2,
@@ -61,7 +73,7 @@ function savedVariables() {
   }`;
 }
 
-test("reconciliation replays current state telemetry but not historical events", async () => {
+test("reconciliation replays character state telemetry but not definitions or historical events", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-reconcile-"));
   const savedVariablesPath = path.join(directory, "Guildweaver.lua");
   const statePath = path.join(directory, "bridge-state.json");
@@ -73,10 +85,12 @@ test("reconciliation replays current state telemetry but not historical events",
     `${JSON.stringify({
       sentTelemetryRevisions: {
         [`${prefix}::telemetry:talent_tree_definition:warrior`]: 4,
+        [`${prefix}::telemetry:character_snapshot:character-rook`]: 9,
         [`${prefix}::telemetry:loot_event:rook:1`]: 2,
       },
       sentTelemetryFingerprints: {
         [`${prefix}::telemetry:talent_tree_definition:warrior`]: "state-fingerprint",
+        [`${prefix}::telemetry:character_snapshot:character-rook`]: "character-fingerprint",
         [`${prefix}::telemetry:loot_event:rook:1`]: "event-fingerprint",
       },
       questActions: {},
@@ -123,7 +137,7 @@ test("reconciliation replays current state telemetry but not historical events",
 
     assert.equal(reconciled.reconciledState, true);
     assert.equal(reconciled.telemetrySent, 1);
-    assert.equal(reconciled.telemetrySkipped, 1);
+    assert.equal(reconciled.telemetrySkipped, 2, "catalog definitions are not replayed");
     assert.equal(requests.length, 1, "the retired character mailbox is not replayed");
     assert.equal(
       requests[0].url,
@@ -132,7 +146,7 @@ test("reconciliation replays current state telemetry but not historical events",
 
     const telemetryBody = JSON.parse(requests[0].options.body);
     assert.equal(telemetryBody.kind, "state");
-    assert.equal(telemetryBody.streamKey, "talent_tree_definition:warrior");
+    assert.equal(telemetryBody.streamKey, "character_snapshot:character-rook");
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

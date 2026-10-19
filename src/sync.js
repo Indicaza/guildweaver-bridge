@@ -18,9 +18,48 @@ function emptyState() {
   return {
     sentTelemetryRevisions: {},
     sentTelemetryFingerprints: {},
+    rejectedTelemetry: {},
     questActions: {},
     lastQuestSyncAt: 0,
   };
+}
+
+// syncOnce runs every pollIntervalMs (1s by default), and parsing a large
+// SavedVariables file costs hundreds of milliseconds. A file whose mtime and
+// size match the last fully settled pass has nothing new to send, so it is
+// skipped until it changes or a reconcile is due. Entries remember the quest
+// action ids the file carried so skipping it does not prune their state.
+const settledFiles = new Map();
+
+function fileSignature(stat) {
+  return `${stat.mtimeMs}:${stat.size}`;
+}
+
+// 4xx means the server will refuse this exact content again. 401 is a device
+// credential problem, 408 and 429 are retry-later signals; everything else
+// waits for the addon to produce different content.
+function permanentRejection(status) {
+  return status >= 400 && status < 500 && ![401, 408, 429].includes(status);
+}
+
+class TelemetryRejectedError extends Error {
+  constructor(status, detail) {
+    super(`Telemetry ingestion rejected record: ${detail}`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+// Reconcile exists to repair website state for live character data. Catalog
+// streams (item, game item and talent tree definitions) and streams without a
+// character are resent whenever their fingerprint changes anyway, so
+// replaying hundreds of them every interval only adds load.
+function replayOnReconcile(record) {
+  return (
+    record.kind === "state" &&
+    Boolean(record.envelope.characterId) &&
+    !record.envelope.eventType.endsWith("_definition")
+  );
 }
 
 // A revision at or below the last one sent normally means "already sent".
@@ -49,6 +88,10 @@ function readState(statePath) {
         parsed?.sentTelemetryFingerprints &&
         typeof parsed.sentTelemetryFingerprints === "object"
           ? parsed.sentTelemetryFingerprints
+          : {},
+      rejectedTelemetry:
+        parsed?.rejectedTelemetry && typeof parsed.rejectedTelemetry === "object"
+          ? parsed.rejectedTelemetry
           : {},
       questActions:
         parsed?.questActions && typeof parsed.questActions === "object"
@@ -128,7 +171,7 @@ async function postTelemetry(config, record, fetchImpl) {
 
   if (!response.ok) {
     const detail = body?.error || text || `HTTP ${response.status}`;
-    throw new Error(`Telemetry ingestion rejected record: ${detail}`);
+    throw new TelemetryRejectedError(response.status, detail);
   }
 
   return body;
@@ -183,10 +226,18 @@ export async function syncOnce(
     log = console.log,
     now = Date.now,
     reconcileState = false,
+    fileCache = settledFiles,
   } = {},
 ) {
   const files = findSavedVariablesFiles(config);
   const state = readState(config.statePath);
+  let stateDirty = false;
+  const flushState = () => {
+    if (!stateDirty) return;
+    writeState(config.statePath, state);
+    stateDirty = false;
+  };
+  const settledThisPass = new Map();
   const pendingQuestActions = new Map();
   const currentQuestActionIds = new Set();
   let skippedFiles = 0;
@@ -195,100 +246,191 @@ export async function syncOnce(
   let telemetrySkipped = 0;
   let telemetryDeferred = 0;
   let telemetryFailed = 0;
+  let telemetryRejected = 0;
+  let unchangedFiles = 0;
 
-  for (const filePath of files) {
-    let database;
+  try {
+    for (const filePath of files) {
+      const cacheKey = `${path.resolve(config.statePath)}::${path.resolve(filePath)}`;
+      let signature = null;
+      try {
+        signature = fileSignature(fs.statSync(filePath));
+      } catch {
+        signature = null;
+      }
 
-    try {
-      const source = fs.readFileSync(filePath, "utf8");
-      database = parseSavedVariables(source);
-      assertSupportedSavedVariablesSchema(database);
-    } catch (error) {
-      skippedFiles += 1;
-      log(`Skipping unreadable Guildweaver SavedVariables ${filePath}: ${error.message}`);
-      continue;
-    }
+      const settled = fileCache.get(cacheKey);
+      if (!reconcileState && signature && settled?.signature === signature) {
+        unchangedFiles += 1;
+        telemetryDiscovered += settled.telemetryCount;
+        telemetrySkipped += settled.telemetryCount;
+        for (const actionId of settled.questActionIds) currentQuestActionIds.add(actionId);
+        continue;
+      }
+      fileCache.delete(cacheKey);
 
-    // Character data arrives as one telemetry stream per data type. Older
-    // addons also kept whole snapshots in sync.outbound.characters for the
-    // retired /api/bridge/characters/snapshot endpoint; those are ignored.
-    for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
-      telemetryDiscovered += 1;
-      let record;
+      let database;
+      let fileOutstanding = false;
+      const fileQuestActionIds = [];
 
       try {
-        record = normalizeTelemetryRecord(streamKey, rawRecord);
+        const source = fs.readFileSync(filePath, "utf8");
+        database = parseSavedVariables(source);
+        assertSupportedSavedVariablesSchema(database);
       } catch (error) {
-        telemetrySkipped += 1;
-        log(`Skipping malformed telemetry ${streamKey}: ${error.message}`);
+        skippedFiles += 1;
+        log(`Skipping unreadable Guildweaver SavedVariables ${filePath}: ${error.message}`);
         continue;
       }
 
-      const key = stateKey(filePath, `telemetry:${record.streamKey}`);
-      const previousRevision = Number(state.sentTelemetryRevisions[key]) || 0;
-      const forceStateReplay = reconcileState && record.kind === "state";
+      // Character data arrives as one telemetry stream per data type. Older
+      // addons also kept whole snapshots in sync.outbound.characters for the
+      // retired /api/bridge/characters/snapshot endpoint; those are ignored.
+      const telemetryPrefix = stateKey(filePath, "telemetry:");
+      const currentTelemetryKeys = new Set();
 
-      if (
-        !forceStateReplay &&
-        previousRevision >= record.revision &&
-        !(record.kind === "state" && revisionReset(record.fingerprint, state.sentTelemetryFingerprints[key]))
-      ) {
-        telemetrySkipped += 1;
-        continue;
-      }
+      for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
+        telemetryDiscovered += 1;
+        currentTelemetryKeys.add(`${telemetryPrefix}${streamKey.trim()}`);
+        let record;
 
-      if (
-        !forceStateReplay &&
-        record.kind === "state" &&
-        record.fingerprint &&
-        state.sentTelemetryFingerprints[key] === record.fingerprint
-      ) {
-        state.sentTelemetryRevisions[key] = record.revision;
-        writeState(config.statePath, state);
-        telemetrySkipped += 1;
-        log(`Skipped unchanged telemetry ${record.streamKey} revision ${record.revision}.`);
-        continue;
-      }
-
-      if (!config.telemetryEndpoint) {
-        telemetryDeferred += 1;
-        continue;
-      }
-
-      try {
-        const result = await postTelemetry(config, record, fetchImpl);
-        state.sentTelemetryRevisions[key] = record.revision;
-        if (record.fingerprint) {
-          state.sentTelemetryFingerprints[key] = record.fingerprint;
+        try {
+          record = normalizeTelemetryRecord(streamKey, rawRecord);
+        } catch (error) {
+          telemetrySkipped += 1;
+          log(`Skipping malformed telemetry ${streamKey}: ${error.message}`);
+          continue;
         }
-        writeState(config.statePath, state);
-        telemetrySent += 1;
-        log(
-          `Synced telemetry ${record.envelope.eventType} revision ${record.revision}` +
-            (result?.status ? ` (${result.status})` : ""),
-        );
-      } catch (error) {
-        if (invalidDeviceToken(error)) throw error;
-        telemetryFailed += 1;
-        log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
+
+        const key = stateKey(filePath, `telemetry:${record.streamKey}`);
+        const previousRevision = Number(state.sentTelemetryRevisions[key]) || 0;
+        const forceStateReplay = reconcileState && replayOnReconcile(record);
+        const rejection = state.rejectedTelemetry[key];
+
+        if (rejection && rejection.fingerprint !== record.fingerprint) {
+          delete state.rejectedTelemetry[key];
+          stateDirty = true;
+        } else if (rejection && !reconcileState) {
+          // Retried only on reconcile passes, so a server-side fix eventually
+          // gets the record through without hammering the endpoint every poll.
+          telemetrySkipped += 1;
+          continue;
+        }
+
+        if (
+          !forceStateReplay &&
+          previousRevision >= record.revision &&
+          !(record.kind === "state" && revisionReset(record.fingerprint, state.sentTelemetryFingerprints[key]))
+        ) {
+          telemetrySkipped += 1;
+          continue;
+        }
+
+        if (
+          !forceStateReplay &&
+          record.kind === "state" &&
+          record.fingerprint &&
+          state.sentTelemetryFingerprints[key] === record.fingerprint
+        ) {
+          state.sentTelemetryRevisions[key] = record.revision;
+          stateDirty = true;
+          telemetrySkipped += 1;
+          log(`Skipped unchanged telemetry ${record.streamKey} revision ${record.revision}.`);
+          continue;
+        }
+
+        if (!config.telemetryEndpoint) {
+          telemetryDeferred += 1;
+          fileOutstanding = true;
+          continue;
+        }
+
+        try {
+          const result = await postTelemetry(config, record, fetchImpl);
+          state.sentTelemetryRevisions[key] = record.revision;
+          if (record.fingerprint) {
+            state.sentTelemetryFingerprints[key] = record.fingerprint;
+          }
+          if (state.rejectedTelemetry[key]) delete state.rejectedTelemetry[key];
+          stateDirty = true;
+          telemetrySent += 1;
+          log(
+            `Synced telemetry ${record.envelope.eventType} revision ${record.revision}` +
+              (result?.status ? ` (${result.status})` : ""),
+          );
+        } catch (error) {
+          if (invalidDeviceToken(error)) throw error;
+          telemetryFailed += 1;
+
+          if (error instanceof TelemetryRejectedError && permanentRejection(error.status)) {
+            telemetryRejected += 1;
+            if (!rejection) {
+              log(
+                `Telemetry ${record.streamKey} revision ${record.revision} rejected ` +
+                  `(HTTP ${error.status}): ${error.detail}; holding it until its content changes.`,
+              );
+            }
+            state.rejectedTelemetry[key] = {
+              fingerprint: record.fingerprint,
+              revision: record.revision,
+              status: error.status,
+              error: String(error.detail).slice(0, 500),
+              rejectedAt: rejection?.rejectedAt ?? now(),
+            };
+            stateDirty = true;
+            continue;
+          }
+
+          fileOutstanding = true;
+          log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
+        }
+      }
+
+      // Streams the addon has dropped (pruned events, removed characters) no
+      // longer need dedupe bookkeeping; without this the state file only grows.
+      for (const store of [
+        state.sentTelemetryRevisions,
+        state.sentTelemetryFingerprints,
+        state.rejectedTelemetry,
+      ]) {
+        for (const key of Object.keys(store)) {
+          if (key.startsWith(telemetryPrefix) && !currentTelemetryKeys.has(key)) {
+            delete store[key];
+            stateDirty = true;
+          }
+        }
+      }
+
+      for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
+        currentQuestActionIds.add(actionId);
+        fileQuestActionIds.push(actionId);
+        if (state.questActions[actionId]) continue;
+
+        if (!validQuestAction(action)) {
+          state.questActions[actionId] = {
+            status: "rejected",
+            error: "invalid_local_quest_action",
+            updatedAt: now(),
+          };
+          stateDirty = true;
+          continue;
+        }
+
+        pendingQuestActions.set(actionId, action);
+      }
+
+      flushState();
+      if (signature && !fileOutstanding) {
+        settledThisPass.set(cacheKey, {
+          signature,
+          questActionIds: fileQuestActionIds,
+          telemetryCount: currentTelemetryKeys.size,
+        });
       }
     }
-
-    for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
-      currentQuestActionIds.add(actionId);
-      if (state.questActions[actionId]) continue;
-
-      if (!validQuestAction(action)) {
-        state.questActions[actionId] = {
-          status: "rejected",
-          error: "invalid_local_quest_action",
-          updatedAt: now(),
-        };
-        continue;
-      }
-
-      pendingQuestActions.set(actionId, action);
-    }
+  } finally {
+    // A thrown pass (revoked device) still keeps what was already acknowledged.
+    flushState();
   }
 
   let questActionsSent = 0;
@@ -324,6 +466,16 @@ export async function syncOnce(
   for (const actionId of Object.keys(state.questActions)) {
     if (!currentQuestActionIds.has(actionId)) {
       delete state.questActions[actionId];
+      stateDirty = true;
+    }
+  }
+  flushState();
+
+  // Only files with nothing left to send (every quest action answered, no
+  // queued telemetry) may be skipped by later polls.
+  for (const [cacheKey, entry] of settledThisPass) {
+    if (entry.questActionIds.every((actionId) => state.questActions[actionId])) {
+      fileCache.set(cacheKey, entry);
     }
   }
 
@@ -362,6 +514,8 @@ export async function syncOnce(
     telemetrySkipped,
     telemetryDeferred,
     telemetryFailed,
+    telemetryRejected,
+    unchangedFiles,
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
