@@ -36,7 +36,7 @@ test('retries farming events unchanged and sends updated checkpoints once', asyn
   fs.mkdirSync(path.dirname(savedVariablesPath), { recursive: true });
   const streamKey = 'farming_session:character-rook:farm-fixture';
   function write(revision, current) {
-    fs.writeFileSync(savedVariablesPath, `GuildweaverDB = ${lua({ schemaVersion: 4, sync: { outbound: { telemetry: {
+    fs.writeFileSync(savedVariablesPath, `GuildweaverDB = ${lua({ gameRelease: "forever-live", schemaVersion: 4, sync: { outbound: { telemetry: {
       [streamKey]: { kind: 'event', revision, envelope: current },
     } } } })}`);
   }

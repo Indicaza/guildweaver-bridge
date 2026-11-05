@@ -67,6 +67,7 @@ test("sends generic telemetry once with an idempotency key across paths with spa
       (request) => request.url === "https://collector.example/v1/telemetry",
     );
     assert.ok(telemetryRequest);
+    assert.equal(telemetryRequest.options.headers["X-Guildweaver-Release"], "forever-live");
     assert.equal(telemetryRequest.options.headers.Authorization, "Bearer gwd_secret");
     assert.match(telemetryRequest.options.headers["Idempotency-Key"], /^gw-[a-f0-9]{64}$/);
 
@@ -91,6 +92,7 @@ test("acknowledges a newer state revision without reposting an unchanged fingerp
   fs.writeFileSync(
     config.statePath,
     JSON.stringify({
+      gameRelease: "forever-live",
       sentTelemetryRevisions: { [telemetryKey]: 2 },
       sentTelemetryFingerprints: { [telemetryKey]: "09def876" },
       questActions: {},
@@ -182,6 +184,17 @@ test("defers the generic outbox without acknowledging it when no ingestion endpo
     assert.equal(result.telemetrySent, 0);
     assert.deepEqual(requests, []);
     assert.equal(fs.existsSync(config.statePath), false, "the deferred outbox is not acknowledged");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+test("copied beta queues wait for the live addon before uploading", async () => {
+  const { directory, config } = setup();
+  try {
+    fs.writeFileSync(config.savedVariablesPath, fixtureSource().replace('["gameRelease"] = "forever-live",', ""));
+    const result = await syncOnce(config, { fetchImpl: assert.fail, log: () => {} });
+    assert.equal(result.skippedFiles, 1);
+    assert.equal(result.telemetryDiscovered, 0);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

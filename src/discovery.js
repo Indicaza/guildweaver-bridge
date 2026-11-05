@@ -2,23 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const INSTALL_VARIANTS = [
-  "_classic_beta_",
-  "_anniversary_",
-  "_classic_",
-  "_retail_",
-  "_ptr_",
-  "_beta_",
-];
-
 function existingDirectories(values) {
   return values.filter((value) => value && fs.existsSync(value));
 }
 
 function variantRoots(wowDirectories) {
-  return wowDirectories.flatMap((wow) =>
-    INSTALL_VARIANTS.map((variant) => path.join(wow, variant)),
-  );
+  return wowDirectories.map((wow) => path.join(wow, "_forever_"));
 }
 
 function childDirectories(root) {
@@ -163,12 +152,24 @@ function accountSavedVariableFiles(wowRoot) {
   return files;
 }
 
+function livePath(configuredPath) {
+  const parts = path.resolve(configuredPath).split(path.sep);
+  const index = parts.findIndex((part) =>
+    /^_(classic(?:_[a-z]+)*|anniversary|retail|ptr|beta|forever)_$/i.test(part),
+  );
+  if (index < 0) return configuredPath;
+  parts[index] = "_forever_";
+  const root = parts.slice(0, index + 1).join(path.sep);
+  if (!fs.existsSync(root)) throw new Error(`WoW Forever installation not found at ${root}`);
+  return parts.join(path.sep);
+}
+
 export function findAddonPath(config) {
   if (config.addonPath) {
-    return config.addonPath;
+    return livePath(config.addonPath);
   }
 
-  const roots = config.wowRoot ? [config.wowRoot] : findWowRoots();
+  const roots = config.wowRoot ? [livePath(config.wowRoot)] : findWowRoots();
   const existing = roots
     .map((root) => path.join(root, "Interface", "AddOns", "Guildweaver"))
     .find((candidate) => fs.existsSync(candidate));
@@ -191,14 +192,15 @@ export function findAddonPath(config) {
 
 export function findSavedVariablesFiles(config) {
   if (config.savedVariablesPath) {
-    if (!fs.existsSync(config.savedVariablesPath)) {
-      throw new Error(`SavedVariables file not found: ${config.savedVariablesPath}`);
+    const file = livePath(config.savedVariablesPath);
+    if (!fs.existsSync(file)) {
+      throw new Error(`SavedVariables file not found: ${file}`);
     }
 
-    return [config.savedVariablesPath];
+    return [file];
   }
 
-  const roots = config.wowRoot ? [config.wowRoot] : findWowRoots();
+  const roots = config.wowRoot ? [livePath(config.wowRoot)] : findWowRoots();
   const files = [...new Set(roots.flatMap(accountSavedVariableFiles))];
 
   if (!files.length) {

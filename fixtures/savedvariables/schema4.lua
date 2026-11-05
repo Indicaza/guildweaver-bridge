@@ -1,4 +1,5 @@
 GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
   ["schemaVersion"] = 4,
   ["sync"] = {
     ["outbound"] = {

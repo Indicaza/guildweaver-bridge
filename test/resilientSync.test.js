@@ -28,6 +28,7 @@ function stream(eventType, characterId, name, revision, fingerprint) {
 
 function source() {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["schemaVersion"] = 4,
     ["sync"] = {
       ["outbound"] = {
