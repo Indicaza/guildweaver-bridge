@@ -199,3 +199,15 @@ test("copied beta queues wait for the live addon before uploading", async () => 
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("a marked save copied from beta cannot upload beta telemetry", async () => {
+  const { directory, config } = setup();
+  try {
+    fs.writeFileSync(config.savedVariablesPath, fixtureSource().replaceAll("Live Realm", "Classic Beta PvE 2"));
+    const result = await syncOnce(config, { fetchImpl: assert.fail, log: () => {} });
+    assert.equal(result.telemetrySent, 0);
+    assert.equal(result.telemetrySkipped, 1);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

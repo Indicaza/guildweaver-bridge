@@ -11,6 +11,7 @@ import {
   schedulePackageReplacement as scheduleNativePackageReplacement,
   uninstallBackground as uninstallNativeBackground,
 } from "./background.js";
+import { createLiveServerCheck } from "./liveServer.js";
 import { loadConfig } from "./config.js";
 import { acquireInstanceLock } from "./instanceLock.js";
 import {
@@ -273,7 +274,9 @@ async function main() {
     return;
   }
 
+  const checkLiveServer = createLiveServerCheck(config);
   const syncWithRepair = async ({ reconcileState = false } = {}) => {
+    await checkLiveServer();
     try {
       return await syncOnce(runtimeConfig, { reconcileState });
     } catch (error) {

@@ -19,7 +19,7 @@ GuildweaverDB = {
               ["build"] = "70245",
               ["interface"] = 16001,
             },
-            ["realm"] = "Classic Beta PvE 2",
+            ["realm"] = "Live Realm",
             ["region"] = "US",
             ["installationId"] = "install-fixture",
             ["characterId"] = "character-fixture",

@@ -74,6 +74,11 @@ export function normalizeTelemetryRecord(streamKey, record) {
     );
   }
 
+  const candidates = [envelope, envelope?.payload];
+  if (candidates.some((value) => /\b(beta|ptr)\b/i.test(value?.realm || ""))) {
+    throw new Error("beta_game_data_rejected");
+  }
+
   const eventType = optionalString(envelope.eventType);
   if (!eventType) {
     throw new Error(`Telemetry ${streamKey} is missing eventType`);

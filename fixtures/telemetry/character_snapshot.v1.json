@@ -8,7 +8,7 @@
     "buildDate": "Oct 5 2026",
     "interface": 16001
   },
-  "realm": "Classic Beta PvE 2",
+  "realm": "Live Realm",
   "region": "US",
   "installationId": "install-6ac2d704-1234abcd-5678ef90",
   "characterId": "character-6ac2d704-aabbccdd-11223344",
@@ -17,10 +17,10 @@
     "schemaVersion": 3,
     "capturedAt": 1791242820,
     "addonVersion": "0.5.0-alpha.1",
-    "characterKey": "classic beta pve 2:rook",
+    "characterKey": "live realm:rook",
     "characterId": "character-6ac2d704-aabbccdd-11223344",
     "name": "Rook",
-    "realm": "Classic Beta PvE 2",
+    "realm": "Live Realm",
     "region": "US",
     "level": 30,
     "sex": 2,
@@ -39,7 +39,7 @@
       "name": "Example Guild",
       "rankName": "Member",
       "rankIndex": 5,
-      "realm": "Classic Beta PvE 2"
+      "realm": "Live Realm"
     },
     "specialization": {
       "index": 1,
