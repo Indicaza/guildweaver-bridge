@@ -42,7 +42,7 @@ test('SavedVariables sync retries corpse events and base definitions unchanged a
     return new Response(JSON.stringify({ status: 'accepted' }), { status: online ? 200 : 503 });
   };
   function write(revision, current) {
-    fs.writeFileSync(savedVariablesPath, `GuildweaverDB = ${lua({ schemaVersion: 4, sync: { outbound: { telemetry: {
+    fs.writeFileSync(savedVariablesPath, `GuildweaverDB = ${lua({ gameRelease: "forever-live", schemaVersion: 4, sync: { outbound: { telemetry: {
       mob: { kind: 'event', revision, envelope: current },
       definition: { kind: 'state', revision: 1, envelope: definition },
     } } } })}`);

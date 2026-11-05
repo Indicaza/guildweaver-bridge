@@ -181,7 +181,7 @@ Linux checks common native launcher and compatibility-layer layouts, including:
 
 Inside Wine/Proton prefixes, both `Program Files` and `Program Files (x86)` WoW locations are checked.
 
-The standard WoW variants (`_classic_beta_`, `_classic_`, `_anniversary_`, `_retail_`, PTR/beta variants) are supported by the same discovery logic.
+Discovery targets the live WoW Forever client (`_forever_`). Existing beta paths resolve to the sibling live installation.
 
 For unusual installations on any OS, set `wowRoot` explicitly in the optional config.
 
@@ -236,7 +236,7 @@ A config file is only needed for non-standard WoW installs, development websites
 ```json
 {
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
-  "wowRoot": "/Applications/World of Warcraft/_classic_beta_",
+  "wowRoot": "/Applications/World of Warcraft/_forever_",
   "pollIntervalMs": 3000,
   "addonUpdateChannel": "edge",
   "bridgeUpdateChannel": "edge",

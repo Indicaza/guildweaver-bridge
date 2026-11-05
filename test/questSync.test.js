@@ -9,6 +9,7 @@ import { syncOnce } from "../src/sync.js";
 
 function questSavedVariables() {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["sync"] = {
       ["outbound"] = {
         ["characters"] = {},

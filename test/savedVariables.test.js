@@ -15,13 +15,13 @@ GuildweaverDB = {
   ["sync"] = {
     ["outbound"] = {
       ["characters"] = {
-        ["classic beta pve 2:rook"] = {
+        ["live realm:rook"] = {
           ["revision"] = 7,
           ["updatedAt"] = 1791160000,
           ["payload"] = {
             ["schemaVersion"] = 1,
             ["name"] = "Rook",
-            ["realm"] = "Classic Beta PvE 2",
+            ["realm"] = "Live Realm",
             ["level"] = 20,
             ["class"] = {
               ["name"] = "Warrior",
@@ -52,7 +52,7 @@ const schema4Fixture = fs.readFileSync(
 
 test("parses legacy Guildweaver SavedVariables without executing Lua", () => {
   const database = parseSavedVariables(fixture);
-  const envelope = database.sync.outbound.characters["classic beta pve 2:rook"];
+  const envelope = database.sync.outbound.characters["live realm:rook"];
 
   assert.equal(savedVariablesSchemaVersion(database), 2);
   assert.equal(assertSupportedSavedVariablesSchema(database), 2);

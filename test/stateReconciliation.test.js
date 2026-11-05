@@ -8,6 +8,7 @@ import { syncOnce } from "../src/sync.js";
 
 function savedVariables() {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["schemaVersion"] = 4,
     ["sync"] = {
       ["outbound"] = {
@@ -83,6 +84,7 @@ test("reconciliation replays character state telemetry but not definitions or hi
   fs.writeFileSync(
     statePath,
     `${JSON.stringify({
+      gameRelease: "forever-live",
       sentTelemetryRevisions: {
         [`${prefix}::telemetry:talent_tree_definition:warrior`]: 4,
         [`${prefix}::telemetry:character_snapshot:character-rook`]: 9,

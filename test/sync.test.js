@@ -8,6 +8,7 @@ import { syncOnce } from "../src/sync.js";
 
 function savedVariables(revision = 3) {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["sync"] = {
       ["outbound"] = {
         ["characters"] = {
@@ -80,6 +81,7 @@ function telemetryStream(streamKey, { kind = "state", revision = 1, eventType, c
 
 function telemetrySavedVariables(streams) {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["schemaVersion"] = 4,
     ["sync"] = {
       ["outbound"] = {
@@ -291,6 +293,7 @@ test("writes bridge state once per file pass and prunes vanished streams", async
     fs.writeFileSync(
       statePath,
       JSON.stringify({
+        gameRelease: "forever-live",
         sentTelemetryRevisions: { [`${prefix}loot:old`]: 1, [otherFile]: 1 },
         sentTelemetryFingerprints: { [`${prefix}loot:old`]: "x" },
         rejectedTelemetry: { [`${prefix}gone:1`]: { fingerprint: "y" } },

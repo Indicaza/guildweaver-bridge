@@ -16,6 +16,7 @@ import {
 
 function emptyState() {
   return {
+    gameRelease: "forever-live",
     sentTelemetryRevisions: {},
     sentTelemetryFingerprints: {},
     rejectedTelemetry: {},
@@ -78,7 +79,9 @@ function readState(statePath) {
 
   try {
     const parsed = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    if (parsed?.gameRelease !== "forever-live") return emptyState();
     return {
+      gameRelease: "forever-live",
       sentTelemetryRevisions:
         parsed?.sentTelemetryRevisions &&
         typeof parsed.sentTelemetryRevisions === "object"
@@ -163,6 +166,7 @@ async function postTelemetry(config, record, fetchImpl) {
     headers: {
       Authorization: `Bearer ${config.deviceToken}`,
       "Content-Type": "application/json",
+      "X-Guildweaver-Release": "forever-live",
       "Idempotency-Key": telemetryIdempotencyKey(record),
     },
     body: JSON.stringify(telemetryTransportBody(record)),
@@ -183,6 +187,7 @@ async function postQuestActions(config, actions, fetchImpl) {
     headers: {
       Authorization: `Bearer ${config.deviceToken}`,
       "Content-Type": "application/json",
+      "X-Guildweaver-Release": "forever-live",
     },
     body: JSON.stringify({ actions }),
   });
@@ -277,6 +282,9 @@ export async function syncOnce(
         const source = fs.readFileSync(filePath, "utf8");
         database = parseSavedVariables(source);
         assertSupportedSavedVariablesSchema(database);
+        if (database.gameRelease !== "forever-live") {
+          throw new Error("Waiting for the launch addon to save live data on reload or logout");
+        }
       } catch (error) {
         skippedFiles += 1;
         log(`Skipping unreadable Guildweaver SavedVariables ${filePath}: ${error.message}`);

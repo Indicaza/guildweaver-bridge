@@ -16,11 +16,11 @@ function stream(eventType, characterId, name, revision, fingerprint) {
               ["eventType"] = "${eventType}",
               ["capturedAt"] = 1791320496,
               ["characterId"] = "${characterId}",
-              ["realm"] = "Classic Beta PvE 2",
+              ["realm"] = "Live Realm",
               ["payload"] = {
                 ["schemaVersion"] = 1,
                 ["name"] = "${name}",
-                ["realm"] = "Classic Beta PvE 2",
+                ["realm"] = "Live Realm",
               },
             },
           },`;
@@ -28,6 +28,7 @@ function stream(eventType, characterId, name, revision, fingerprint) {
 
 function source() {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["schemaVersion"] = 4,
     ["sync"] = {
       ["outbound"] = {

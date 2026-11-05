@@ -22,20 +22,21 @@ function luaRecord({
   streamId = characterId,
 } = {}) {
   return `GuildweaverDB = {
+    ["gameRelease"] = "forever-live",
     ["schemaVersion"] = 4,
     ["sync"] = {
       ["outbound"] = {
         ["characters"] = {
-          ["classic beta pve 2:rook ravenstar"] = {
+          ["live realm:rook ravenstar"] = {
             ["revision"] = ${revision},
             ["payload"] = {
               ["schemaVersion"] = 3,
               ["capturedAt"] = 1791450000,
               ["installationId"] = "${installationId}",
               ["characterId"] = "${characterId}",
-              ["characterKey"] = "classic beta pve 2:rook ravenstar",
+              ["characterKey"] = "live realm:rook ravenstar",
               ["name"] = "Rook Ravenstar",
-              ["realm"] = "Classic Beta PvE 2",
+              ["realm"] = "Live Realm",
               ["region"] = "US",
               ["capture"] = {
                 ["integrityVersion"] = 1,
@@ -65,7 +66,7 @@ function luaRecord({
               ["capturedAt"] = 1791450000,
               ["installationId"] = "${installationId}",
               ["characterId"] = "${characterId}",
-              ["realm"] = "Classic Beta PvE 2",
+              ["realm"] = "Live Realm",
               ["region"] = "US",
               ["payload"] = {
                 ["schemaVersion"] = 3,
@@ -136,7 +137,7 @@ test("preserves character identity and completeness metadata byte-for-byte throu
 
 test("SavedVariables files are independent delivery queues and can never dedupe each other by stream key", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-sacred-multifile-"));
-  const wowRoot = path.join(directory, "_classic_beta_");
+  const wowRoot = path.join(directory, "_forever_");
   const accountRoot = path.join(wowRoot, "WTF", "Account");
   const pcPath = path.join(accountRoot, "PC", "SavedVariables", "Guildweaver.lua");
   const macPath = path.join(accountRoot, "MAC", "SavedVariables", "Guildweaver.lua");
