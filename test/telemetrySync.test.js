@@ -211,3 +211,35 @@ test("a marked save copied from beta cannot upload beta telemetry", async () => 
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("acknowledges delivered telemetry to the addon so its next login drops it", async () => {
+  const { directory, config } = setup();
+  const addonPath = path.join(directory, "AddOns", "Guildweaver");
+  fs.mkdirSync(addonPath, { recursive: true });
+  config.addonPath = addonPath;
+  const acksPath = path.join(addonPath, "Data", "BridgeAcks.generated.lua");
+
+  try {
+    // Offline: nothing is delivered, so nothing is acknowledged.
+    await syncOnce(config, {
+      fetchImpl: async () => {
+        throw new Error("offline");
+      },
+      log: () => {},
+    });
+    assert.equal(fs.existsSync(acksPath), false);
+
+    await syncOnce(config, { fetchImpl: async () => ok(), log: () => {} });
+    const acks = fs.readFileSync(acksPath, "utf8");
+    assert.match(acks, /^-- Guildweaver Bridge telemetry acknowledgements [a-f0-9]{16}\n/);
+    assert.match(acks, /GW\.BridgeAcks/);
+    assert.match(acks, /\["character_snapshot:character-fixture"\] = "09def876"/);
+
+    // Unchanged on later passes: the file is not rewritten.
+    const written = fs.statSync(acksPath).mtimeMs;
+    await syncOnce(config, { fetchImpl: async () => ok(), log: () => {} });
+    assert.equal(fs.statSync(acksPath).mtimeMs, written);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

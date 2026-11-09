@@ -140,6 +140,8 @@ Holdfast API
 Website / Discord
 ```
 
+After delivering telemetry, the bridge writes `Data/BridgeAcks.generated.lua` into the addon folder: each delivered stream key with the fingerprint the server has. On its next login the addon drops those records from SavedVariables, so the save holds only undelivered data instead of growing to the outbound queue's cap. The file is written locally, without a network call, and only when the set changes.
+
 WoW owns observed game facts such as character level, gear, professions, inventory, and game-side progress. Holdfast remains authoritative for guild-owned state such as assignments, Rep, Marks, rewards, ranks, billets, permissions, and notifications.
 
 ## Release packages

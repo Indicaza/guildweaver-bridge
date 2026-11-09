@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { writeBridgeInbox } from "./bridgeInbox.js";
+import { writeBridgeInbox, writeTelemetryAcks } from "./bridgeInbox.js";
 import { findSavedVariablesFiles } from "./discovery.js";
 import {
   assertSupportedSavedVariablesSchema,
@@ -22,6 +23,7 @@ function emptyState() {
     rejectedTelemetry: {},
     questActions: {},
     lastQuestSyncAt: 0,
+    telemetryAckDigest: "",
   };
 }
 
@@ -101,6 +103,8 @@ function readState(statePath) {
           ? parsed.questActions
           : {},
       lastQuestSyncAt: Number(parsed?.lastQuestSyncAt) || 0,
+      telemetryAckDigest:
+        typeof parsed?.telemetryAckDigest === "string" ? parsed.telemetryAckDigest : "",
     };
   } catch {
     return emptyState();
@@ -243,6 +247,16 @@ export async function syncOnce(
     stateDirty = false;
   };
   const settledThisPass = new Map();
+  // Telemetry the server has, by the addon's stream key and fingerprint.
+  // Written to the addon's inbox so the next login drops it from
+  // SavedVariables instead of carrying it until the queue's cap.
+  const acknowledgedTelemetry = new Map();
+  const acknowledge = (streamKey, fingerprint) => {
+    if (typeof fingerprint !== "string" || !fingerprint) return;
+    const known = acknowledgedTelemetry.get(streamKey);
+    // Two accounts with different content under one key: acknowledge neither.
+    acknowledgedTelemetry.set(streamKey, known === undefined || known === fingerprint ? fingerprint : null);
+  };
   const pendingQuestActions = new Map();
   const currentQuestActionIds = new Set();
   let skippedFiles = 0;
@@ -270,6 +284,7 @@ export async function syncOnce(
         telemetryDiscovered += settled.telemetryCount;
         telemetrySkipped += settled.telemetryCount;
         for (const actionId of settled.questActionIds) currentQuestActionIds.add(actionId);
+        for (const [streamKey, fingerprint] of settled.telemetryAcks || []) acknowledge(streamKey, fingerprint);
         continue;
       }
       fileCache.delete(cacheKey);
@@ -277,6 +292,11 @@ export async function syncOnce(
       let database;
       let fileOutstanding = false;
       const fileQuestActionIds = [];
+      const fileTelemetryAcks = [];
+      const delivered = (streamKey, rawRecord) => {
+        fileTelemetryAcks.push([streamKey, rawRecord?.fingerprint]);
+        acknowledge(streamKey, rawRecord?.fingerprint);
+      };
 
       try {
         const source = fs.readFileSync(filePath, "utf8");
@@ -331,6 +351,7 @@ export async function syncOnce(
           !(record.kind === "state" && revisionReset(record.fingerprint, state.sentTelemetryFingerprints[key]))
         ) {
           telemetrySkipped += 1;
+          delivered(streamKey, rawRecord);
           continue;
         }
 
@@ -343,6 +364,7 @@ export async function syncOnce(
           state.sentTelemetryRevisions[key] = record.revision;
           stateDirty = true;
           telemetrySkipped += 1;
+          delivered(streamKey, rawRecord);
           log(`Skipped unchanged telemetry ${record.streamKey} revision ${record.revision}.`);
           continue;
         }
@@ -362,6 +384,7 @@ export async function syncOnce(
           if (state.rejectedTelemetry[key]) delete state.rejectedTelemetry[key];
           stateDirty = true;
           telemetrySent += 1;
+          delivered(streamKey, rawRecord);
           log(
             `Synced telemetry ${record.envelope.eventType} revision ${record.revision}` +
               (result?.status ? ` (${result.status})` : ""),
@@ -433,6 +456,7 @@ export async function syncOnce(
           signature,
           questActionIds: fileQuestActionIds,
           telemetryCount: currentTelemetryKeys.size,
+          telemetryAcks: fileTelemetryAcks,
         });
       }
     }
@@ -484,6 +508,27 @@ export async function syncOnce(
   for (const [cacheKey, entry] of settledThisPass) {
     if (entry.questActionIds.every((actionId) => state.questActions[actionId])) {
       fileCache.set(cacheKey, entry);
+    }
+  }
+
+  const acknowledged = Object.fromEntries(
+    [...acknowledgedTelemetry].filter(([, fingerprint]) => fingerprint !== null),
+  );
+  const ackDigest = Object.keys(acknowledged).length
+    ? createHash("sha1")
+        .update(JSON.stringify(Object.entries(acknowledged).sort(([left], [right]) => (left < right ? -1 : 1))))
+        .digest("hex")
+        .slice(0, 16)
+    : "";
+
+  if (ackDigest !== state.telemetryAckDigest) {
+    try {
+      writeTelemetryAcks(config, acknowledged, ackDigest);
+      state.telemetryAckDigest = ackDigest;
+      stateDirty = true;
+      flushState();
+    } catch (error) {
+      log(`Could not write telemetry acknowledgements: ${error.message}`);
     }
   }
 

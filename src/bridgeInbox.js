@@ -4,6 +4,7 @@ import path from "node:path";
 import { findAddonPath } from "./discovery.js";
 
 const GENERATED_INBOX = "Data/BridgeInbox.generated.lua";
+const GENERATED_ACKS = "Data/BridgeAcks.generated.lua";
 
 function luaString(value) {
   return `"${String(value)
@@ -56,7 +57,7 @@ function inboxMarker(quests, acknowledgedQuestActions) {
   return `-- Guildweaver Bridge inbox ${revision}:${acknowledgements}`;
 }
 
-function excludeGeneratedInboxFromCheckout(addonPath) {
+function excludeGeneratedInboxFromCheckout(addonPath, generated = GENERATED_INBOX) {
   if (!fs.existsSync(addonPath)) return;
 
   const realPath = fs.realpathSync.native(addonPath);
@@ -70,10 +71,10 @@ function excludeGeneratedInboxFromCheckout(addonPath) {
     : "";
   const lines = existing.split(/\r?\n/).map((line) => line.trim());
 
-  if (lines.includes(GENERATED_INBOX)) return;
+  if (lines.includes(generated)) return;
 
   const separator = existing && !existing.endsWith("\n") ? "\n" : "";
-  fs.appendFileSync(excludePath, `${separator}${GENERATED_INBOX}\n`, "utf8");
+  fs.appendFileSync(excludePath, `${separator}${generated}\n`, "utf8");
 }
 
 export function bridgeInboxSource({ quests, acknowledgedQuestActions = [] }) {
@@ -85,6 +86,38 @@ export function bridgeInboxSource({ quests, acknowledgedQuestActions = [] }) {
   const marker = inboxMarker(quests, acknowledgedQuestActions);
 
   return `${marker}\nlocal _, GW = ...\n\nGW.BridgeInbox = ${luaValue(payload)}\n`;
+}
+
+function writeGenerated(inboxPath, source) {
+  const marker = source.split("\n", 1)[0];
+  fs.mkdirSync(path.dirname(inboxPath), { recursive: true });
+  if (fs.existsSync(inboxPath) && fs.readFileSync(inboxPath, "utf8").split("\n", 1)[0] === marker) {
+    return false;
+  }
+  const temporary = `${inboxPath}.tmp`;
+  fs.writeFileSync(temporary, source, "utf8");
+  fs.rmSync(inboxPath, { force: true });
+  fs.renameSync(temporary, inboxPath);
+  return true;
+}
+
+// The telemetry the server has: addon stream key -> record fingerprint. On
+// its next login the addon drops matching records from SavedVariables, so
+// delivered data is not carried (in memory and in every save) until the
+// outbound queue's cap. Kept apart from the quest inbox so it is written
+// without a network round trip.
+export function telemetryAcksSource(acknowledged, digest) {
+  return `-- Guildweaver Bridge telemetry acknowledgements ${digest || "none"}\nlocal _, GW = ...\n\nGW.BridgeAcks = ${luaValue({
+    schemaVersion: 1,
+    telemetry: acknowledged,
+  })}\n`;
+}
+
+export function writeTelemetryAcks(config, acknowledged, digest) {
+  const addonPath = findAddonPath(config);
+  excludeGeneratedInboxFromCheckout(addonPath, GENERATED_ACKS);
+  const acksPath = path.join(addonPath, ...GENERATED_ACKS.split("/"));
+  return { path: acksPath, changed: writeGenerated(acksPath, telemetryAcksSource(acknowledged, digest)) };
 }
 
 export function writeBridgeInbox(config, payload) {
