@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "eventType": "auction_scan",
+  "capturedAt": 1794300000,
+  "gameBuild": { "version": "1.60.1", "build": "70338", "interface": 16001 },
+  "realm": "Normal",
+  "region": "US",
+  "locale": "enUS",
+  "installationId": "install-fixture",
+  "characterId": "character-rook",
+  "addon": { "name": "Guildweaver", "version": "0.5.0" },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "scanId": "ah-6af0e6e0-1f2e3d-1",
+    "observedAt": 1794299970,
+    "market": { "faction": "alliance", "basis": "player_faction", "mapId": 1453 },
+    "query": { "kind": "commodity", "chunk": 1, "chunks": 1 },
+    "coverage": "items",
+    "observedWith": { "auctionator": true },
+    "items": [
+      { "itemId": 2589, "quantity": 261, "listings": 4, "minUnitBuyout": 12, "complete": true, "prices": [[12, 240, 2], [15, 20, 1], [999, 1, 1]] },
+      { "itemId": 15210, "suffix": -1081, "quantity": 3, "listings": 2, "minUnitBuyout": 50000, "complete": true, "prices": [[50000, 1, 1], [60000, 2, 1]] }
+    ]
+  }
+}

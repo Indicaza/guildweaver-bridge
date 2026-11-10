@@ -293,6 +293,10 @@ The contract fixture and integration tests cover measured duration, optional AFK
 
 `dungeon_run` events travel the same envelope-v1 event path, unread and unchanged. Each run has one stream key (`dungeon_run:<character>:<runId>`); an open checkpoint written at /reload or logout and the final run are newer revisions of it with a higher payload `sequence`. Retries reuse the idempotency key, and the website, not the bridge, keeps a finished run from being overwritten. Mob loot and gathering events inside a run carry `context.dungeonRun.runId`, also forwarded as is. `fixtures/telemetry/dungeon_run.v1.json` is paired with the website fixture.
 
+### Auction House scans
+
+`auction_scan` events (what a player's client showed of the auction house) use the same envelope-v1 event path, unread and unchanged, including the nested `[unitPrice, quantity, listings]` price arrays. Each scan chunk has its own stream key (`auction_scan:<character>:<scanId>`); retries reuse the idempotency key, and the website deduplicates identical scans. `fixtures/telemetry/auction_scan.v1.json` is shared with the website tests. The bridge never contacts Blizzard's auction API; that runs on the website server.
+
 ### Mob loot and public game definitions
 
 The bridge carries `mob_loot` event revisions and `game_item_definition` state records through the existing envelope-v1 path without rewriting source GUID allocations, coordinates, locale, visibility, or dungeon/difficulty context. `fixtures/telemetry/mob_loot.v1.json` and `game_item_definition.v1.json` are paired with the website fixtures. Contract tests exercise SavedVariables parsing, failed-upload retry, stable idempotency keys, and later corpse revisions.
