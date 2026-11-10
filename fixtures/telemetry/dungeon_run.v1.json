@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "eventType": "dungeon_run",
+  "capturedAt": 1791763200,
+  "gameBuild": {
+    "version": "1.60.1",
+    "build": "70338",
+    "interface": 16001
+  },
+  "realm": "Live Realm",
+  "region": "US",
+  "locale": "enUS",
+  "installationId": "install-fixture",
+  "characterId": "character-rook",
+  "addon": {
+    "name": "Guildweaver",
+    "version": "0.5.0"
+  },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "runId": "dungeon-6ac1f000-1a2b3c-4d5e6f",
+    "sequence": 3,
+    "status": "completed",
+    "endReason": "all_bosses_defeated",
+    "startedAt": 1791761400,
+    "endedAt": 1791763200,
+    "lastActiveAt": 1791763200,
+    "durationSeconds": 1740,
+    "insideSeconds": 1620,
+    "instance": {
+      "name": "The Deadmines",
+      "type": "party",
+      "instanceId": 36,
+      "difficultyId": 1,
+      "difficultyName": "Normal",
+      "maxPlayers": 5
+    },
+    "character": {
+      "levelAtEntry": 19,
+      "levelAtExit": 20,
+      "classToken": "DRUID"
+    },
+    "group": {
+      "sizeAtEntry": 5,
+      "maxSize": 5
+    },
+    "xp": {
+      "available": true,
+      "atLevelCap": false,
+      "gained": 14250,
+      "levelUps": 1
+    },
+    "wallet": {
+      "basis": "wallet_delta",
+      "available": true,
+      "netCopper": 18450
+    },
+    "deaths": 1,
+    "bosses": {
+      "defeated": 2,
+      "total": 2,
+      "manualSplits": 1,
+      "encounterEvents": true,
+      "list": [
+        { "encounterId": 1, "name": "Rhahk'Zor", "at": 420, "source": "encounter_end" },
+        { "encounterId": 2, "name": "Edwin VanCleef", "at": 1700, "source": "encounter_end" }
+      ]
+    },
+    "loot": {
+      "observations": 23
+    },
+    "timeline": [
+      { "at": 0, "kind": "enter", "name": "The Deadmines" },
+      { "at": 380, "kind": "encounter_start", "encounterId": 1, "name": "Rhahk'Zor" },
+      { "at": 420, "kind": "boss_kill", "encounterId": 1, "name": "Rhahk'Zor", "source": "encounter_end" },
+      { "at": 900, "kind": "death" },
+      { "at": 905, "kind": "leave" },
+      { "at": 1025, "kind": "reenter" },
+      { "at": 1200, "kind": "level_up", "level": 20 },
+      { "at": 1500, "kind": "manual_split", "name": "Ship" },
+      { "at": 1650, "kind": "encounter_start", "encounterId": 2, "name": "Edwin VanCleef" },
+      { "at": 1700, "kind": "boss_kill", "encounterId": 2, "name": "Edwin VanCleef", "source": "encounter_end" },
+      { "at": 1740, "kind": "leave" }
+    ]
+  }
+}
