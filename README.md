@@ -289,6 +289,10 @@ The bridge forwards envelope-v1 `farming_session` events and gathering `context.
 
 The contract fixture and integration tests cover measured duration, optional AFK evidence, zero/one coordinates, retry and final-checkpoint delivery. Timing classification and rate eligibility belong to the collector/website. Deploy the website consumer before rolling out the addon producer.
 
+### Dungeon runs
+
+`dungeon_run` events travel the same envelope-v1 event path, unread and unchanged. Each run has one stream key (`dungeon_run:<character>:<runId>`); an open checkpoint written at /reload or logout and the final run are newer revisions of it with a higher payload `sequence`. Retries reuse the idempotency key, and the website, not the bridge, keeps a finished run from being overwritten. Mob loot and gathering events inside a run carry `context.dungeonRun.runId`, also forwarded as is. `fixtures/telemetry/dungeon_run.v1.json` is paired with the website fixture.
+
 ### Mob loot and public game definitions
 
 The bridge carries `mob_loot` event revisions and `game_item_definition` state records through the existing envelope-v1 path without rewriting source GUID allocations, coordinates, locale, visibility, or dungeon/difficulty context. `fixtures/telemetry/mob_loot.v1.json` and `game_item_definition.v1.json` are paired with the website fixtures. Contract tests exercise SavedVariables parsing, failed-upload retry, stable idempotency keys, and later corpse revisions.
