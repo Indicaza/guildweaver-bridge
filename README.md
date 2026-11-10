@@ -295,7 +295,7 @@ The contract fixture and integration tests cover measured duration, optional AFK
 
 ### Auction House scans
 
-`auction_scan` events (what a player's client showed of the auction house) use the same envelope-v1 event path, unread and unchanged, including the nested `[unitPrice, quantity, listings]` price arrays. Each scan chunk has its own stream key (`auction_scan:<character>:<scanId>`); retries reuse the idempotency key, and the website deduplicates identical scans. `fixtures/telemetry/auction_scan.v1.json` is shared with the website tests. The bridge never contacts Blizzard's auction API; that runs on the website server.
+`auction_scan` events (what a player's client showed of the auction house) use the same envelope-v1 event path, unread and unchanged, including the nested `[unitPrice, quantity, listings]` price arrays. Each scan chunk has its own stream key (`auction_scan:<character>:<scanId>`); retries reuse the idempotency key, and the website tells a retry (same scan id) from the same results seen again later (a new observation that confirms the old one). `fixtures/telemetry/auction_scan.v1.json` (a modern commodity search) and `fixtures/telemetry/auction_scan.page.v1.json` (a page of the classic browse frame, with item names) are shared with the website tests. The bridge never contacts Blizzard's auction API; that runs on the website server.
 
 ### Mob loot and public game definitions
 
