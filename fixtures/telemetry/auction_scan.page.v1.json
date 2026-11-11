@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "eventType": "auction_scan",
+  "capturedAt": 1794300000,
+  "gameBuild": { "version": "1.60.1", "build": "70338", "interface": 16001 },
+  "realm": "Normal",
+  "region": "US",
+  "locale": "enUS",
+  "installationId": "install-fixture",
+  "characterId": "character-rook",
+  "addon": { "name": "Guildweaver", "version": "0.6.0" },
+  "payloadSchemaVersion": 1,
+  "payload": {
+    "schemaVersion": 1,
+    "scanId": "ah-6af0e6f2-2a3b4c-4",
+    "observedAt": 1794299980,
+    "market": { "faction": "horde", "basis": "player_faction", "mapId": 1454 },
+    "query": { "kind": "page", "chunk": 1, "chunks": 1 },
+    "coverage": "items",
+    "observedWith": { "auctionator": true },
+    "items": [
+      { "itemId": 2589, "quantity": 1400, "listings": 70, "minUnitBuyout": 90, "complete": true, "name": "Linen Cloth", "qualityId": 1, "requiredLevel": 0,
+        "prices": [[90, 400, 20], [101, 20, 1], [102, 20, 1]] },
+      { "itemId": 15210, "suffix": -1081, "quantity": 50, "listings": 50, "minUnitBuyout": 50000, "complete": false, "name": "Raider's Chestpiece of the Bear",
+        "qualityId": 2, "requiredLevel": 30, "prices": [[50000, 50, 50]] }
+    ]
+  }
+}

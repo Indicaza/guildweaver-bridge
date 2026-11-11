@@ -55,3 +55,36 @@ test('a scan read from SavedVariables keeps nested price arrays and is sent once
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// The classic browse frame: one page with the names the game showed, and an
+// item whose search had pages the player never opened.
+test('a classic-frame page keeps names with apostrophes and per-item completeness', async () => {
+  const page = JSON.parse(fs.readFileSync(new URL('../fixtures/telemetry/auction_scan.page.v1.json', import.meta.url), 'utf8'));
+  const key = `auction_scan:character-rook:${page.payload.scanId}`;
+  const record = normalizeTelemetryRecord(key, { kind: 'event', revision: 1, envelope: page });
+  assert.deepEqual(record.envelope.payload, page.payload);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gw auction page '));
+  const savedVariablesPath = path.join(directory, 'SavedVariables', 'Guildweaver.lua');
+  fs.mkdirSync(path.dirname(savedVariablesPath), { recursive: true });
+  fs.writeFileSync(savedVariablesPath, `GuildweaverDB = ${lua({ gameRelease: 'forever-live', schemaVersion: 4, sync: { outbound: { telemetry: {
+    [key]: { kind: 'event', revision: 1, envelope: page },
+  } } } })}`);
+  const requests = [];
+  const fetchImpl = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    return new Response(JSON.stringify({ status: 'accepted' }), { status: 200 });
+  };
+  try {
+    const config = { holdfastUrl: 'https://holdfast.example', telemetryEndpoint: 'https://collector.example/telemetry',
+      deviceToken: 'test-device', savedVariablesPath, wowRoot: null, questSyncIntervalMs: Number.MAX_SAFE_INTEGER,
+      statePath: path.join(directory, 'state.json') };
+    assert.equal((await syncOnce(config, { fetchImpl, log: () => {} })).telemetrySent, 1);
+    const sent = requests[0].envelope.payload;
+    assert.equal(sent.query.kind, 'page');
+    assert.equal(sent.items[1].name, "Raider's Chestpiece of the Bear");
+    assert.equal(sent.items[1].complete, false);
+    assert.deepEqual(sent.items[0].prices[0], [90, 400, 20]);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
