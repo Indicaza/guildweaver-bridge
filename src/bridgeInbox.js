@@ -5,6 +5,7 @@ import { findAddonPath } from "./discovery.js";
 
 const GENERATED_INBOX = "Data/BridgeInbox.generated.lua";
 const GENERATED_ACKS = "Data/BridgeAcks.generated.lua";
+const GENERATED_LOOT = "Data/BridgeLoot.generated.lua";
 
 function luaString(value) {
   return `"${String(value)
@@ -118,6 +119,45 @@ export function writeTelemetryAcks(config, acknowledged, digest) {
   excludeGeneratedInboxFromCheckout(addonPath, GENERATED_ACKS);
   const acksPath = path.join(addonPath, ...GENERATED_ACKS.split("/"));
   return { path: acksPath, changed: writeGenerated(acksPath, telemetryAcksSource(acknowledged, digest)) };
+}
+
+// The first line of the loot inbox in the add-on folder (its change
+// marker), or null when there is no file.
+export function readGeneratedMarker(config, generated = GENERATED_LOOT) {
+  const filePath = path.join(findAddonPath(config), ...generated.split("/"));
+  if (!fs.existsSync(filePath)) return null;
+  return fs.readFileSync(filePath, "utf8").split("\n", 1)[0].replace(/\r$/, "");
+}
+
+// Character wishlists and the valuable-BoE watchlist (lootSync.js). The
+// new file is written beside the old one, read back, and only then moved
+// over it: at no point is there a half-written or missing loot inbox, so a
+// crash or a full disk leaves the last valid one in place.
+export function writeLootInbox(config, source) {
+  const addonPath = findAddonPath(config);
+  excludeGeneratedInboxFromCheckout(addonPath, GENERATED_LOOT);
+  const lootPath = path.join(addonPath, ...GENERATED_LOOT.split("/"));
+  const marker = source.split("\n", 1)[0];
+  fs.mkdirSync(path.dirname(lootPath), { recursive: true });
+  if (fs.existsSync(lootPath) && fs.readFileSync(lootPath, "utf8").split("\n", 1)[0] === marker) {
+    return { path: lootPath, changed: false };
+  }
+  const temporary = `${lootPath}.tmp`;
+  try {
+    fs.writeFileSync(temporary, source, "utf8");
+    if (fs.readFileSync(temporary, "utf8") !== source) throw new Error("the loot inbox did not read back as written");
+    try {
+      fs.renameSync(temporary, lootPath);
+    } catch (error) {
+      // Some Windows setups refuse to rename over an existing file.
+      if (!["EPERM", "EEXIST", "EACCES"].includes(error?.code)) throw error;
+      fs.rmSync(lootPath, { force: true });
+      fs.renameSync(temporary, lootPath);
+    }
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  return { path: lootPath, changed: true };
 }
 
 export function writeBridgeInbox(config, payload) {

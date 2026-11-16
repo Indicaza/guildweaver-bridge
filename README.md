@@ -142,6 +142,25 @@ Website / Discord
 
 After delivering telemetry, the bridge writes `Data/BridgeAcks.generated.lua` into the addon folder: each delivered stream key with the fingerprint the server has. On its next login the addon drops those records from SavedVariables, so the save holds only undelivered data instead of growing to the outbound queue's cap. The file is written locally, without a network call, and only when the set changes.
 
+### Loot inbox: wishlists and valuable-BoE watchlist
+
+Every `lootSyncIntervalMs` (one minute by default) the bridge asks Holdfast for the account's character gear wishlists and a short list of valuable Bind-on-Equip items per auction house (`GET /api/bridge/loot/snapshot`), and writes them to `Data/BridgeLoot.generated.lua` in the addon folder. The addon uses that file to highlight wanted and valuable items in Need/Greed rolls. WoW reads it at login or `/reload`; nothing updates inside a running game.
+
+The loot inbox is tracked on its own, apart from the quest inbox:
+
+- Its change marker is a digest of its own content (`-- Guildweaver Bridge loot <digest>`), and its state lives under `loot` in the bridge state file. A wishlist edit reaches the addon whether or not a quest changed, and a quest change never rewrites the loot file.
+- An unchanged snapshot costs one conditional request (`If-None-Match`) and no write. The same content delivered again is not rewritten.
+- The answer is checked against the contract (schema 1) before anything is written. A malformed, oversized or unsupported answer, an answer older than the file, a server error or no network all leave the existing file exactly as it is: the addon keeps the last valid wishlist.
+- The file is written beside the old one, read back, and moved over it in one step, so there is never a missing or half-written loot inbox.
+- What is written is bounded whatever the website sends: 20 characters, 200 wishlist items each, 4 markets, 300 watchlist items each, short text. It stays well under 200 KB.
+- If the file disappears (the addon was updated) or is not the one last written, the whole snapshot is fetched and written again.
+- A website that does not have the endpoint yet answers 404; the bridge then asks again every 30 minutes instead of every minute.
+- A failure here never stops quest sync, telemetry delivery or telemetry acknowledgements.
+
+Each character in the file carries the addon's own ids for it (`aliases`), its name and realm, so the addon can tell which wishlist belongs to the character that is logged in.
+
+The addon reports group rolls (`loot_roll`) and Encounter Journal loot lists (`loot_catalog_snapshot`) through the ordinary telemetry path below; the bridge forwards them unread like every other event.
+
 WoW owns observed game facts such as character level, gear, professions, inventory, and game-side progress. Holdfast remains authoritative for guild-owned state such as assignments, Rep, Marks, rewards, ranks, billets, permissions, and notifications.
 
 ## Release packages
@@ -240,6 +259,7 @@ A config file is only needed for non-standard WoW installs, development websites
   "holdfastUrl": "https://holdfast-tddi.onrender.com",
   "wowRoot": "/Applications/World of Warcraft/_forever_",
   "pollIntervalMs": 3000,
+  "lootSyncIntervalMs": 60000,
   "addonUpdateChannel": "edge",
   "bridgeUpdateChannel": "edge",
   "addonUpdateIntervalMs": 900000,
@@ -247,7 +267,7 @@ A config file is only needed for non-standard WoW installs, development websites
 }
 ```
 
-Valid addon and bridge update channels are `edge`, `beta`, and `stable`.
+Valid addon and bridge update channels are `edge`, `beta`, and `stable`. `lootSyncIntervalMs` (wishlists and the valuable-BoE watchlist) is at least 15000.
 
 There are intentionally no member IDs or authentication secrets in the config.
 
