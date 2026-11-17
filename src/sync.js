@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { writeBridgeInbox, writeTelemetryAcks } from "./bridgeInbox.js";
 import { findSavedVariablesFiles } from "./discovery.js";
+import { emptyLootState, readLootState, syncLoot } from "./lootSync.js";
 import {
   assertSupportedSavedVariablesSchema,
   outboundTelemetry,
@@ -24,6 +25,7 @@ function emptyState() {
     questActions: {},
     lastQuestSyncAt: 0,
     telemetryAckDigest: "",
+    loot: emptyLootState(),
   };
 }
 
@@ -105,6 +107,7 @@ function readState(statePath) {
       lastQuestSyncAt: Number(parsed?.lastQuestSyncAt) || 0,
       telemetryAckDigest:
         typeof parsed?.telemetryAckDigest === "string" ? parsed.telemetryAckDigest : "",
+      loot: readLootState(parsed?.loot),
     };
   } catch {
     return emptyState();
@@ -532,6 +535,22 @@ export async function syncOnce(
     }
   }
 
+  // Wishlists and the BoE watchlist: their own schedule, digest and file.
+  // Run before the quest snapshot and never allowed to throw, so neither
+  // can hold the other up.
+  let loot = { status: "skipped" };
+  try {
+    const before = JSON.stringify(state.loot);
+    loot = await syncLoot(config, state.loot, { fetchImpl, log, now });
+    if (JSON.stringify(state.loot) !== before) {
+      stateDirty = true;
+      flushState();
+    }
+  } catch (error) {
+    log(`Loot sync failed: ${error.message}`);
+    loot = { status: "failed" };
+  }
+
   const timestamp = now();
   const questSyncDue =
     questActionsSent > 0 ||
@@ -572,6 +591,7 @@ export async function syncOnce(
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
+    lootSync: loot.status,
     reconciledState: Boolean(reconcileState),
   };
 }

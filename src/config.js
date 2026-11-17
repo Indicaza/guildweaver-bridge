@@ -73,6 +73,8 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
     addonUpdateIntervalMs: Number(parsed.addonUpdateIntervalMs) || 60 * 1000,
     bridgeUpdateIntervalMs: Number(parsed.bridgeUpdateIntervalMs) || 60 * 1000,
     questSyncIntervalMs: Number(parsed.questSyncIntervalMs) || 15 * 1000,
+    // Character wishlists and the valuable-BoE watchlist (lootSync.js).
+    lootSyncIntervalMs: Number(parsed.lootSyncIntervalMs) || 60 * 1000,
     stateReconcileIntervalMs:
       Number(parsed.stateReconcileIntervalMs) || 15 * 60 * 1000,
     pollIntervalMs: Number(parsed.pollIntervalMs) || 1000,
@@ -109,6 +111,10 @@ export function loadConfig(configPath = "guildweaver-bridge.json") {
 
   if (config.questSyncIntervalMs < 3000) {
     throw new Error("questSyncIntervalMs must be at least 3000");
+  }
+
+  if (config.lootSyncIntervalMs < 15_000) {
+    throw new Error("lootSyncIntervalMs must be at least 15000");
   }
 
   if (config.stateReconcileIntervalMs < 60_000) {
