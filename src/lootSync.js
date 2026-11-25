@@ -229,6 +229,7 @@ export function lootInboxSource(snapshot) {
 async function fetchSnapshot(config, etag, fetchImpl) {
   const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/loot/snapshot`, {
     headers: { Authorization: `Bearer ${config.deviceToken}`, ...(etag ? { "If-None-Match": `"${etag}"` } : {}) },
+    signal: AbortSignal.timeout(10_000),
   });
   if (response.status === 304) return { status: 304 };
   const raw = await response.text();
