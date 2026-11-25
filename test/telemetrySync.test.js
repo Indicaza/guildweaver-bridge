@@ -243,3 +243,31 @@ test("acknowledges delivered telemetry to the addon so its next login drops it",
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("explains unconfirmed release without log spam and accepts a corrected save", async () => {
+  const { directory, config } = setup();
+  const logs = [];
+  let time = 1791320496000;
+  const options = { fetchImpl: async () => ok(), log: (line) => logs.push(line), now: () => time };
+  try {
+    const rejected = fixtureSource().replace('["gameRelease"] = "forever-live",',
+      '["meta"] = { ["releaseValidation"] = { ["reason"] = "test_build" } },');
+    fs.writeFileSync(config.savedVariablesPath, rejected);
+    assert.equal((await syncOnce(config, options)).telemetrySent, 0);
+    time += 1000;
+    assert.equal((await syncOnce(config, options)).skippedFiles, 1);
+    assert.equal(logs.filter((line) => line.includes("test_build")).length, 1);
+    assert.match(logs.join("\n"), /run \/gw version/);
+    time += 60_000;
+    await syncOnce(config, options);
+    assert.equal(logs.filter((line) => line.includes("test_build")).length, 2);
+    fs.writeFileSync(config.savedVariablesPath, fixtureSource());
+    assert.equal((await syncOnce(config, options)).telemetrySent, 1);
+    fs.writeFileSync(config.savedVariablesPath, rejected);
+    await syncOnce(config, options);
+    assert.equal(logs.filter((line) => line.includes("test_build")).length, 3, "a new failure after recovery is logged");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
