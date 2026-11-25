@@ -271,3 +271,24 @@ test("explains unconfirmed release without log spam and accepts a corrected save
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("realm-free live telemetry requires the live installation and supported build", async () => {
+  const { directory, config } = setup();
+  const logs = [];
+  const hidden = fixtureSource()
+    .replace('["schemaVersion"] = 4,', '["schemaVersion"] = 4, ["meta"] = { ["releaseValidation"] = { ["reason"] = "live_realm_unavailable", ["interface"] = 16001, ["build"] = 71037, ["testBuild"] = false } },')
+    .replaceAll('["realm"] = "Live Realm",', "");
+  const options = { fetchImpl: async () => ok(), log: (line) => logs.push(line) };
+  try {
+    fs.writeFileSync(config.savedVariablesPath, hidden);
+    assert.equal((await syncOnce(config, options)).telemetrySent, 0);
+    assert.match(logs.join("\n"), /requires the supported live Forever installation/);
+    config.savedVariablesPath = path.join(directory, "_forever_", "WTF", "Account", "a", "SavedVariables", "Guildweaver.lua");
+    fs.mkdirSync(path.dirname(config.savedVariablesPath), { recursive: true });
+    fs.writeFileSync(config.savedVariablesPath, hidden);
+    assert.equal((await syncOnce(config, options)).telemetrySent, 1);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
