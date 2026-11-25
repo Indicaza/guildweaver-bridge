@@ -292,3 +292,46 @@ test("realm-free live telemetry requires the live installation and supported bui
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test("zero upload budget leaves records queued and the next pass delivers them", async () => {
+  const { directory, config } = setup();
+  let calls = 0;
+  const fetchImpl = async (_url, options) => {
+    calls += 1;
+    assert.ok(options.signal instanceof AbortSignal);
+    return ok();
+  };
+  try {
+    const first = await syncOnce(config, { maxUploadAttempts: 0, fetchImpl, log: () => {} });
+    assert.equal(first.telemetrySent, 0);
+    assert.equal(first.telemetryDeferred, 1);
+    assert.equal(calls, 0);
+    const second = await syncOnce(config, { fetchImpl, log: () => {} });
+    assert.equal(second.telemetrySent, 1);
+    assert.equal(calls, 1);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("quest snapshot failure does not discard successful telemetry or reject the pass", async () => {
+  const { directory, config } = setup();
+  config.questSyncIntervalMs = 1;
+  try {
+    const result = await syncOnce(config, {
+      fetchImpl: async (url, options) => {
+        assert.ok(options.signal instanceof AbortSignal);
+        if (url === config.telemetryEndpoint) return ok();
+        return new Response("temporarily unavailable", { status: 503 });
+      },
+      log: () => {},
+    });
+    assert.equal(result.telemetrySent, 1);
+    assert.equal(result.questSyncFailed, true);
+    assert.equal(result.questSnapshotUpdated, false);
+    assert.equal(Object.values(JSON.parse(fs.readFileSync(config.statePath, "utf8")).sentTelemetryRevisions)[0], 3);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
