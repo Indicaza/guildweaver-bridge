@@ -39,6 +39,11 @@ const settledFiles = new Map();
 const fileWarnings = new Map();
 const FILE_WARNING_INTERVAL_MS = 60_000;
 const MAX_FILE_WARNINGS = 128;
+const REQUEST_TIMEOUT_MS = 10_000;
+const MAX_UPLOAD_ATTEMPTS = 32;
+const UPLOAD_BUDGET_MS = 10_000;
+const AUCTION_PAUSE_MS = 300_000;
+const auctionPausedUntil = new Map();
 
 function logFileWarning(key, message, timestamp, log) {
   const previous = fileWarnings.get(key);
@@ -202,6 +207,7 @@ async function postTelemetry(config, record, fetchImpl) {
       "Idempotency-Key": telemetryIdempotencyKey(record),
     },
     body: JSON.stringify(telemetryTransportBody(record)),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const { text, body } = await responseBody(response);
 
@@ -222,6 +228,7 @@ async function postQuestActions(config, actions, fetchImpl) {
       "X-Guildweaver-Release": "forever-live",
     },
     body: JSON.stringify({ actions }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const { text, body } = await responseBody(response);
 
@@ -236,6 +243,7 @@ async function postQuestActions(config, actions, fetchImpl) {
 async function getQuestSnapshot(config, fetchImpl) {
   const response = await fetchImpl(`${config.holdfastUrl}/api/bridge/quests/snapshot`, {
     headers: { Authorization: `Bearer ${config.deviceToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const { text, body } = await responseBody(response);
 
@@ -264,6 +272,8 @@ export async function syncOnce(
     now = Date.now,
     reconcileState = false,
     fileCache = settledFiles,
+    maxUploadAttempts = MAX_UPLOAD_ATTEMPTS,
+    uploadBudgetMs = UPLOAD_BUDGET_MS,
   } = {},
 ) {
   const files = findSavedVariablesFiles(config);
@@ -295,6 +305,10 @@ export async function syncOnce(
   let telemetryFailed = 0;
   let telemetryRejected = 0;
   let unchangedFiles = 0;
+  let uploadAttempts = 0;
+  let transientUploadFailure = false;
+  const uploadStartedAt = now();
+  let pausedAuctionUntil = auctionPausedUntil.get(config.telemetryEndpoint) || 0;
 
   try {
     for (const filePath of files) {
@@ -424,6 +438,19 @@ export async function syncOnce(
           continue;
         }
 
+        if (record.envelope.eventType === "auction_scan" && now() < pausedAuctionUntil) {
+          telemetryDeferred += 1;
+          fileOutstanding = true;
+          continue;
+        }
+        if (transientUploadFailure || uploadAttempts >= maxUploadAttempts
+            || (uploadAttempts > 0 && now() - uploadStartedAt >= uploadBudgetMs)) {
+          telemetryDeferred += 1;
+          fileOutstanding = true;
+          continue;
+        }
+
+        uploadAttempts += 1;
         try {
           const result = await postTelemetry(config, record, fetchImpl);
           state.sentTelemetryRevisions[key] = record.revision;
@@ -462,6 +489,16 @@ export async function syncOnce(
           }
 
           fileOutstanding = true;
+          if (error instanceof TelemetryRejectedError && error.detail === "auction_ingestion_paused"
+              && record.envelope.eventType === "auction_scan") {
+            pausedAuctionUntil = now() + AUCTION_PAUSE_MS;
+            if (auctionPausedUntil.size >= MAX_FILE_WARNINGS) auctionPausedUntil.clear();
+            auctionPausedUntil.set(config.telemetryEndpoint, pausedAuctionUntil);
+          } else {
+            // Stop this pass's uploads on an unavailable endpoint. The next
+            // poll can retry; downstream requests still get their own attempt.
+            transientUploadFailure = true;
+          }
           log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
         }
       }
@@ -515,13 +552,17 @@ export async function syncOnce(
   }
 
   let questActionsSent = 0;
+  let questSyncFailed = false;
 
   if (pendingQuestActions.size > 0) {
-    const results = await postQuestActions(
-      config,
-      [...pendingQuestActions.values()],
-      fetchImpl,
-    );
+    let results = [];
+    try {
+      results = await postQuestActions(config, [...pendingQuestActions.values()].slice(0, 100), fetchImpl);
+    } catch (error) {
+      if (invalidDeviceToken(error)) throw error;
+      questSyncFailed = true;
+      log(`Quest actions remain queued: ${error.message}`);
+    }
 
     for (const result of results) {
       const actionId = String(result?.id || "");
@@ -604,6 +645,7 @@ export async function syncOnce(
   let questSnapshotUpdated = false;
 
   if (questSyncDue) {
+    try {
     const snapshot = await getQuestSnapshot(config, fetchImpl);
     const acknowledgedQuestActions = [...currentQuestActionIds].filter(
       (actionId) => state.questActions[actionId],
@@ -622,6 +664,14 @@ export async function syncOnce(
         `Quest inbox updated to Holdfast revision ${snapshot.revision}; /reload to apply in WoW.`,
       );
     }
+    } catch (error) {
+      if (invalidDeviceToken(error)) throw error;
+      questSyncFailed = true;
+      // Honor the normal polling interval even if the endpoint is unavailable.
+      state.lastQuestSyncAt = timestamp;
+      writeState(config.statePath, state);
+      log(`Quest snapshot will retry: ${error.message}`);
+    }
   }
 
   return {
@@ -637,6 +687,8 @@ export async function syncOnce(
     questActionsDiscovered: currentQuestActionIds.size,
     questActionsSent,
     questSnapshotUpdated,
+    questSyncFailed,
+    transientUploadFailure,
     lootSync: loot.status,
     reconciledState: Boolean(reconcileState),
   };
