@@ -333,6 +333,18 @@ export async function syncOnce(
         if (database.gameRelease !== "forever-live") {
           throw new Error(releaseValidationError(database));
         }
+        const validation = database.meta?.releaseValidation;
+        if (validation?.reason === "live_realm_unavailable") {
+          const parts = path.resolve(filePath).split(path.sep);
+          if (!parts.some((part) => part.toLowerCase() === "_forever_")
+              || parts.some((part) => /^_(beta|ptr|classic_beta|classic_ptr)_$/i.test(part))
+              || !Number.isInteger(Number(validation.interface))
+              || Number(validation.interface) < 16000 || Number(validation.interface) >= 17000
+              || !Number.isFinite(Number(validation.build)) || Number(validation.build) < 71037
+              || validation.testBuild === true || validation.testBuild === 1) {
+            throw new Error("Realm-free telemetry requires the supported live Forever installation and build");
+          }
+        }
       } catch (error) {
         skippedFiles += 1;
         logFileWarning(cacheKey, `Skipping Guildweaver SavedVariables ${filePath}: ${error.message}`, now(), log);
@@ -353,6 +365,14 @@ export async function syncOnce(
 
         try {
           record = normalizeTelemetryRecord(streamKey, rawRecord);
+          if (database.meta?.releaseValidation?.reason === "live_realm_unavailable"
+              && record.envelope.eventType === "auction_scan") {
+            // A realm-free save can contain scans queued before the fix,
+            // including surname-shaped realm values. Do not publish or
+            // acknowledge them until a trustworthy market scope is available.
+            telemetryDeferred += 1;
+            continue;
+          }
         } catch (error) {
           telemetrySkipped += 1;
           log(`Skipping malformed telemetry ${streamKey}: ${error.message}`);
