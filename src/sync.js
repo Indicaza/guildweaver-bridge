@@ -36,6 +36,31 @@ function emptyState() {
 // action ids the file carried so skipping it does not prune their state.
 const settledFiles = new Map();
 
+const fileWarnings = new Map();
+const FILE_WARNING_INTERVAL_MS = 60_000;
+const MAX_FILE_WARNINGS = 128;
+
+function logFileWarning(key, message, timestamp, log) {
+  const previous = fileWarnings.get(key);
+  if (previous?.message === message && timestamp >= previous.timestamp
+      && timestamp - previous.timestamp < FILE_WARNING_INTERVAL_MS) return;
+  if (!fileWarnings.has(key) && fileWarnings.size >= MAX_FILE_WARNINGS) {
+    fileWarnings.delete(fileWarnings.keys().next().value);
+  }
+  fileWarnings.set(key, { message, timestamp });
+  log(message);
+}
+
+function releaseValidationError(database) {
+  const validation = database?.meta?.releaseValidation;
+  const reason = typeof validation?.reason === "string"
+    ? validation.reason.replace(/[^a-z_]/g, "").slice(0, 64) : "";
+  return reason && reason !== "live"
+    ? `Forever live release not confirmed (${reason}); run /gw version in WoW for details.`
+    : "Forever live release marker missing; check the installed addon and run /gw version in WoW.";
+}
+
+
 function fileSignature(stat) {
   return `${stat.mtimeMs}:${stat.size}`;
 }
@@ -306,13 +331,14 @@ export async function syncOnce(
         database = parseSavedVariables(source);
         assertSupportedSavedVariablesSchema(database);
         if (database.gameRelease !== "forever-live") {
-          throw new Error("Waiting for the launch addon to save live data on reload or logout");
+          throw new Error(releaseValidationError(database));
         }
       } catch (error) {
         skippedFiles += 1;
-        log(`Skipping unreadable Guildweaver SavedVariables ${filePath}: ${error.message}`);
+        logFileWarning(cacheKey, `Skipping Guildweaver SavedVariables ${filePath}: ${error.message}`, now(), log);
         continue;
       }
+      fileWarnings.delete(cacheKey);
 
       // Character data arrives as one telemetry stream per data type. Older
       // addons also kept whole snapshots in sync.outbound.characters for the
