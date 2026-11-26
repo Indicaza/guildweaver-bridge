@@ -15,6 +15,7 @@ import { requestAgent } from "./agent.js";
 import { normalizeDomains } from "./domains.js";
 import { diagnose } from "./doctor.js";
 import { createArchiveProgress } from "./cli/archiveProgress.js";
+import { describeUpdate } from "./cli/updateStatus.js";
 import { notify, notificationsEnabled, setNotifications } from "./notifications.js";
 
 function parseArgs(args) {
@@ -87,9 +88,12 @@ async function main() {
     if (json) console.log(JSON.stringify(result));
     else {
       heading("Update");
-      rows(Object.entries(result).map(([key, value]) => [key, value?.status || "Unavailable"]));
+      rows(Object.entries(result).map(([key, value]) => {
+        const { label, tone } = describeUpdate(value);
+        return [key === "addon" ? "Addon" : key === "bridge" ? "Bridge" : key, tone === "success" ? green("✓ " + label) : tone === "error" ? red("✖ " + label) : tone === "info" ? gold("↻ " + label) : warn("! " + label)];
+      }));
       if (["updated", "developer-updated"].includes(result.addon?.status)) console.log(warn("Reload WoW to load the updated addon."));
-      if (result.bridge?.status === "restart-scheduled") console.log(muted("Restart scheduled. The new process will notify when running."));
+      if (result.bridge?.status === "restart-scheduled") console.log(muted("No action needed. Guildweaver will restart itself and send a notification when the new version is running."));
     }
     return;
   }
