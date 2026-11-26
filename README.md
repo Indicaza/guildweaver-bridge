@@ -334,3 +334,20 @@ node src/cli.js archive pull --dataset market-monthly --market MARKET_KEY --out 
 ```
 
 The status command lists authorization, available dataset names and market keys. A pull requests at most 200 rows, verifies the server SHA-256 checksum and writes a compressed, versioned JSON batch to an explicitly chosen, previously nonexistent file. Pass the printed nextCursor to --cursor and use a different output filename to continue. market-current contains live price summaries; market-monthly contains finalized monthly aggregates. Current data can change between pages; this is not a consistent full backup. No background archive polling, automatic deletion, retention acknowledgement, or production database replacement is performed. Do not use these exports as the sole disaster recovery backup.
+
+## Guildweaver command center
+
+Source checkout: `npm link` registers `gw` using the package bin entry. The packaged installer writes a launcher into the application's per-user data directory under `bin`; add that directory to your PATH once if necessary. Existing installed bridges can run `node src/gw.js install-cli` with their installed runtime. No shell profile or system PATH is changed automatically.
+
+```sh
+gw
+gw help
+gw status --json
+gw logs
+gw dev logs character
+gw dev logs errors --no-follow
+gw dev logs network --level error --lines 100
+gw archive status
+gw open
+```
+The dev log viewer supports follow mode, rotation detection and JSON output; domain filtering on legacy text logs is heuristic. Debug records are not fabricated. It does not download data or alter synchronization. Archive data transfer still requires explicit authorization and an output destination.
