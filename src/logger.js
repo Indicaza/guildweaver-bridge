@@ -30,7 +30,7 @@ export function enableFileLogging(filePath) {
   rotateLog(filePath);
 
   const write = (level, values) => {
-    const message = redact(values.map(formatValue).join(" "));
+    const message = redact(values.map(formatValue).join(" ")).replace(/[\r\n]+/g, " ").slice(0, 4000);
     const line = `[${new Date().toISOString()}] ${level} ${message}\n`;
     try {
       rotateLog(filePath);
