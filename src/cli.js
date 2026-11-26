@@ -5,6 +5,7 @@ import process from "node:process";
 
 import { ensureAddonCurrent } from "./addonManager.js";
 import { runArchiveCommand } from "./archive.js";
+import { installCli } from "./cli/install.js";
 import {
   backgroundStatus as nativeBackgroundStatus,
   installBackground as installNativeBackground,
@@ -183,6 +184,8 @@ async function main() {
     const addonMessage = describeAddonUpdate(addonResult);
     if (addonMessage) console.log(addonMessage);
     const installed = platformBackground.installBackground(config);
+    const binDirectory = installCli(config);
+    console.log(`Guildweaver CLI installed in ${binDirectory}; add that directory to PATH to use gw.`);
     console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     console.log("Guildweaver addon is installed and automatic updates are enabled.");
     console.log("Background sync installed and started. It will launch automatically when you sign in.");
