@@ -9,7 +9,7 @@ import { packagedRuntime } from "./packageUpdater.js";
 import { runArchiveCommand } from "./archive.js";
 import { COMMANDS } from "./cli/registry.js";
 import { heading, rows, gold, muted, green, warn, red, loading } from "./cli/output.js";
-import { showLogs } from "./cli/logs.js";
+import { showLogs, debugEnabled, setDebug } from "./cli/logs.js";
 import { installCli } from "./cli/install.js";
 import { requestAgent } from "./agent.js";
 import { normalizeDomains } from "./domains.js";
@@ -93,6 +93,15 @@ async function main() {
       return;
     }
     await runArchiveCommand(config, rest);
+    return;
+  }
+  if (command === "dev" && ["on", "off", "status"].includes(rest[0]) && rest.length === 1) {
+    if (rest[0] !== "status") setDebug(config, rest[0] === "on");
+    console.log("Debug tracing " + (debugEnabled(config) ? "enabled" : "disabled"));
+    return;
+  }
+  if (command === "dev" && rest[0] === "trace" && rest.length === 2) {
+    await showLogs(config, { traceId: rest[1], count: 1000, json });
     return;
   }
   if (command === "logs" || (command === "dev" && rest[0] === "logs")) {
