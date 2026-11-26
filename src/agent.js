@@ -69,7 +69,7 @@ export async function startAgent(config, handler) {
   server.unref();
   return () => { closing = true; server.close(); clean(); process.removeListener("exit", clean); };
 }
-export async function requestAgent(config, command, args = [], { onProgress } = {}) {
+export async function requestAgent(config, command, args = [], { onProgress, timeoutMs = 120_000 } = {}) {
   let descriptor;
   try {
     descriptor = JSON.parse(fs.readFileSync(descriptorPath(config), "utf8"));
@@ -79,7 +79,7 @@ export async function requestAgent(config, command, args = [], { onProgress } = 
     const socket = net.createConnection(descriptor.address);
     socket.setEncoding("utf8");
     let buffer = "";
-    socket.setTimeout(120_000, () => socket.destroy(new Error("Agent response timed out; the operation may still be running")));
+    socket.setTimeout(timeoutMs, () => socket.destroy(new Error("Agent response timed out; the operation may still be running")));
     socket.once("error", reject);
     socket.once("connect", () => socket.write(JSON.stringify({ token: descriptor.token, command, args, ...(typeof onProgress === "function" ? { progress: true } : {}) }) + "\n"));
     socket.on("data", (chunk) => {
