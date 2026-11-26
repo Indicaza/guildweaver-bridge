@@ -117,7 +117,7 @@ async function main() {
   if (command === "archive") {
     if (rest.length === 0) {
       heading("Archive");
-      rows([["gw archive status", "Check device authorization and markets"], ["gw archive pull", "Export verified pages into an explicit file or directory"], ["gw archive verify", "Validate a local archive directory"]]);
+      rows([["gw archive status", "Check device authorization and markets"], ["gw archive pull", "Export verified pages into an explicit file or directory"], ["gw archive verify", "Validate a local archive directory"], ["gw archive pull-all", "Transfer all market history under an archive hold"], ["gw archive verify-all", "Verify a complete local market transfer"]]);
       return;
     }
     const renderer = createArchiveProgress({ json });
