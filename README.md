@@ -322,3 +322,15 @@ The contract fixture and integration tests cover measured duration, optional AFK
 The bridge carries `mob_loot` event revisions and `game_item_definition` state records through the existing envelope-v1 path without rewriting source GUID allocations, coordinates, locale, visibility, or dungeon/difficulty context. `fixtures/telemetry/mob_loot.v1.json` and `game_item_definition.v1.json` are paired with the website fixtures. Contract tests exercise SavedVariables parsing, failed-upload retry, stable idempotency keys, and later corpse revisions.
 
 A base game definition is separate from an equipped/bag item definition. Public filtering happens at the website's dedicated fact projection; the bridge never makes character uploads public. SavedVariables remains schema 4, and no endpoint configuration change is required. Searching the catalog inside the addon is a later downstream-cache feature; the addon does not make HTTP requests.
+
+
+## Manual archive commands (site administrators)
+
+Archive access is disabled for every device by default. Pair the intended computer normally, then enable that specific device under Archive devices in the website Sync Console (/admin/guildweaver). Enabling access does not start a job or transfer any data.
+
+```sh
+node src/cli.js archive status
+node src/cli.js archive pull --dataset market-monthly --market MARKET_KEY --out /existing/archive/batch-001.json.gz
+```
+
+The status command lists authorization, available dataset names and market keys. A pull requests at most 200 rows, verifies the server SHA-256 checksum and writes a compressed, versioned JSON batch to an explicitly chosen, previously nonexistent file. Pass the printed nextCursor to --cursor and use a different output filename to continue. market-current contains live price summaries; market-monthly contains finalized monthly aggregates. Current data can change between pages; this is not a consistent full backup. No background archive polling, automatic deletion, retention acknowledgement, or production database replacement is performed. Do not use these exports as the sole disaster recovery backup.
