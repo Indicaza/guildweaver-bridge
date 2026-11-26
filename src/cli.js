@@ -366,7 +366,7 @@ async function main() {
         command === "once"
       ) {
         console.log(
-          `Scan complete: ${result.files} file(s), ${result.telemetrySent} telemetry record(s), ${result.telemetrySkipped} skipped, ${result.telemetryDeferred} deferred, ${result.telemetryFailed} failed, ${result.telemetryRejected} rejected, ${result.skippedFiles} unreadable file(s)${shouldReconcile ? ", state reconciled" : ""}.`,
+          `Scan complete: ${result.files} file(s), ${result.telemetrySent} telemetry record(s), ${result.telemetrySkipped} skipped, ${result.telemetryDeferred} deferred, ${result.telemetryFailed} failed, ${result.telemetryRejected} rejected, ${result.unreadableFiles} unreadable file(s), ${result.blockedFiles} validation-blocked file(s)${shouldReconcile ? ", state reconciled" : ""}.`,
         );
       }
       return true;

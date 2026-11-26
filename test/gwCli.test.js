@@ -19,3 +19,8 @@ test("legacy log domains and credentials are handled safely", () => {
   assert.equal(redact("Authorization: Bearer gwd_secret"), "Authorization: [redacted] [redacted]");
   assert.ok(!redact("deviceToken=gwp_example").includes("gwp_example"));
 });
+
+test("legacy retry messages appear in error logs and validation warnings remain warnings", () => {
+  assert.equal(parseLog("[2026-11-25T00:00:00Z] INFO Loot sync will retry: Holdfast answered HTTP 502.").level, "ERROR");
+  assert.equal(parseLog("[2026-11-25T00:00:00Z] INFO Skipping Guildweaver SavedVariables: Forever live release marker missing").level, "WARN");
+});

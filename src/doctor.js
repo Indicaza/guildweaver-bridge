@@ -6,6 +6,7 @@ import { readCredentials } from "./pairing.js";
 import { packagedRuntime } from "./packageUpdater.js";
 import { parseSavedVariables, assertSupportedSavedVariablesSchema, outboundTelemetry } from "./savedVariables.js";
 import { requestAgent } from "./agent.js";
+import { releaseIssue } from "./releaseValidation.js";
 
 const MAX_SCAN_BYTES = 32 * 1024 * 1024;
 const MAX_FILES = 16;
@@ -47,15 +48,16 @@ export async function diagnose(config, { fetchImpl = fetch, request = requestAge
         const database = parseSavedVariables(fs.readFileSync(file, "utf8"));
         assertSupportedSavedVariablesSchema(database);
         readable++;
-        if (database.gameRelease === "forever-live") live++;
-        const reason = KNOWN_REASONS.has(database.meta?.releaseValidation?.reason) ? database.meta.releaseValidation.reason : "unknown";
+        const issue = releaseIssue(database, file);
+        if (!issue) live++;
+        const reason = !issue ? "accepted" : database.gameRelease !== "forever-live" && !database.meta?.releaseValidation?.reason ? "missing_live_marker" : database.meta?.releaseValidation?.reason === "live_realm_unavailable" && database.gameRelease === "forever-live" ? "unsupported_realm_free_save" : KNOWN_REASONS.has(database.meta?.releaseValidation?.reason) ? database.meta.releaseValidation.reason : "unknown";
         reasons[reason] = (reasons[reason] || 0) + 1;
         queued += Object.keys(outboundTelemetry(database)).length;
       } catch { skipped++; }
     }
     skipped += Math.max(0, files.length - MAX_FILES);
     add("SavedVariables", readable && !skipped ? "pass" : readable ? "warn" : "fail", readable + " readable; " + skipped + " unavailable or over scan limit");
-    add("Forever validation", live && live === readable ? "pass" : "warn", live + " live-marked save(s); " + Object.entries(reasons).map(([key, value]) => key + ": " + value).join(", "));
+    add("Forever validation", live && live === readable ? "pass" : "warn", live + " accepted save(s); " + Object.entries(reasons).map(([key, value]) => key + ": " + value).join(", ") + (live < readable ? "; next WoW login and /reload will refresh validation" : ""));
     add("Local telemetry queue", "info", queued + " records present (may already be delivered); /reload saves changes");
   } catch { add("SavedVariables", "warn", "No saved data found; log in and /reload"); }
   try {

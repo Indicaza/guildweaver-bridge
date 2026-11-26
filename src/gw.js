@@ -73,8 +73,9 @@ async function main() {
     if (json) console.log(JSON.stringify(result));
     else {
       heading("Synchronization · " + (rest.join(", ") || "all"));
-      rows([["Files", String(result.files)], ["Uploaded", green(String(result.telemetrySent))], ["Skipped", String(result.telemetrySkipped)], ["Deferred", warn(String(result.telemetryDeferred))], ["Failed", result.telemetryFailed ? red(String(result.telemetryFailed)) : "0"], ["Rejected", String(result.telemetryRejected)], ["Unreadable files", String(result.skippedFiles)], ["Wishlist", result.lootSync], ["Quest inbox", result.questSyncFailed ? "Failed" : result.questSnapshotUpdated ? "Updated" : "Unchanged"]]);
-      console.log(muted("WoW must save data with /reload or logout before it can be uploaded."));
+      rows([["Files", String(result.files)], ["Uploaded", green(String(result.telemetrySent))], ["Skipped", String(result.telemetrySkipped)], ["Deferred", warn(String(result.telemetryDeferred))], ["Failed", result.telemetryFailed ? red(String(result.telemetryFailed)) : "0"], ["Rejected", String(result.telemetryRejected)], ["Unreadable files", String(result.unreadableFiles ?? result.skippedFiles)], ["Validation blocked", String(result.blockedFiles ?? 0)], ["Wishlist", result.lootSync], ["Quest inbox", result.questSyncFailed ? "Failed" : result.questSnapshotUpdated ? "Updated" : "Unchanged"]]);
+      if (result.blockedFiles) console.log(warn("Save is readable but live validation failed. Open WoW and /reload when ready; no blocked telemetry was uploaded."));
+      else console.log(muted("WoW must save data with /reload or logout before it can be uploaded."));
     }
     if (!json && result.retryAfterSeconds) console.log(warn("Website busy · retry in " + result.retryAfterSeconds + "s · unsent data remains queued."));
     if (result.telemetryFailed || result.questSyncFailed || result.skippedFiles || result.lootSync === "failed" || result.retryAfterSeconds) process.exitCode = 1;

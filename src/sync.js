@@ -6,6 +6,8 @@ import { writeBridgeInbox, writeTelemetryAcks } from "./bridgeInbox.js";
 import { findSavedVariablesFiles } from "./discovery.js";
 import { emptyLootState, readLootState, syncLoot } from "./lootSync.js";
 import { normalizeDomains, includesEvent } from "./domains.js";
+import { releaseIssue } from "./releaseValidation.js";
+import { httpErrorDetail } from "./httpErrors.js";
 import {
   assertSupportedSavedVariablesSchema,
   outboundTelemetry,
@@ -56,16 +58,6 @@ function logFileWarning(key, message, timestamp, log) {
   fileWarnings.set(key, { message, timestamp });
   log(message);
 }
-
-function releaseValidationError(database) {
-  const validation = database?.meta?.releaseValidation;
-  const reason = typeof validation?.reason === "string"
-    ? validation.reason.replace(/[^a-z_]/g, "").slice(0, 64) : "";
-  return reason && reason !== "live"
-    ? `Forever live release not confirmed (${reason}); run /gw version in WoW for details.`
-    : "Forever live release marker missing; check the installed addon and run /gw version in WoW.";
-}
-
 
 function fileSignature(stat) {
   return `${stat.mtimeMs}:${stat.size}`;
@@ -213,7 +205,7 @@ async function postTelemetry(config, record, fetchImpl) {
   const { text, body } = await responseBody(response);
 
   if (!response.ok) {
-    const detail = body?.error || text || `HTTP ${response.status}`;
+    const detail = httpErrorDetail(response.status, body, text);
     throw new TelemetryRejectedError(response.status, detail);
   }
 
@@ -241,7 +233,7 @@ async function postQuestActions(config, actions, fetchImpl) {
   const { text, body } = await responseBody(response);
 
   if (!response.ok) {
-    const detail = body?.error || text || `HTTP ${response.status}`;
+    const detail = httpErrorDetail(response.status, body, text);
     throw new Error(`Holdfast rejected quest actions: ${detail}`);
   }
 
@@ -256,7 +248,7 @@ async function getQuestSnapshot(config, fetchImpl) {
   const { text, body } = await responseBody(response);
 
   if (!response.ok) {
-    const detail = body?.error || text || `HTTP ${response.status}`;
+    const detail = httpErrorDetail(response.status, body, text);
     throw new Error(`Holdfast quest sync failed: ${detail}`);
   }
 
@@ -312,6 +304,7 @@ export async function syncOnce(
   const pendingQuestActions = new Map();
   const currentQuestActionIds = new Set();
   let skippedFiles = 0;
+  let blockedFiles = 0;
   let telemetryDiscovered = 0;
   let telemetrySent = 0;
   let telemetrySkipped = 0;
@@ -360,20 +353,12 @@ export async function syncOnce(
         const source = fs.readFileSync(filePath, "utf8");
         database = parseSavedVariables(source);
         assertSupportedSavedVariablesSchema(database);
-        if (database.gameRelease !== "forever-live") {
-          throw new Error(releaseValidationError(database));
-        }
-        const validation = database.meta?.releaseValidation;
-        if (validation?.reason === "live_realm_unavailable") {
-          const parts = path.resolve(filePath).split(path.sep);
-          if (!parts.some((part) => part.toLowerCase() === "_forever_")
-              || parts.some((part) => /^_(beta|ptr|classic_beta|classic_ptr)_$/i.test(part))
-              || !Number.isInteger(Number(validation.interface))
-              || Number(validation.interface) < 16000 || Number(validation.interface) >= 17000
-              || !Number.isFinite(Number(validation.build)) || Number(validation.build) < 71037
-              || validation.testBuild === true || validation.testBuild === 1) {
-            throw new Error("Realm-free telemetry requires the supported live Forever installation and build");
-          }
+        const issue = releaseIssue(database, filePath);
+        if (issue) {
+          skippedFiles += 1;
+          blockedFiles += 1;
+          logFileWarning(cacheKey, `Skipping Guildweaver SavedVariables ${filePath}: ${issue}`, now(), log);
+          continue;
         }
       } catch (error) {
         skippedFiles += 1;
@@ -710,6 +695,8 @@ export async function syncOnce(
   return {
     files: files.length,
     skippedFiles,
+    blockedFiles,
+    unreadableFiles: skippedFiles - blockedFiles,
     telemetryDiscovered,
     telemetrySent,
     telemetrySkipped,
