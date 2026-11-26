@@ -14,7 +14,8 @@ export function createArchiveProgress({ stream = process.stderr, json = false } 
     let line;
     const page = event.page ? "page " + event.page + " · " : "";
     const counts = (event.pages ?? 0) + " pages · " + (event.rows ?? 0).toLocaleString("en-US") + " rows · " + size(event.bytes);
-    if (event.stage === "queued") line = gold("◆") + " " + page + "Queued · position " + event.position;
+    if (event.stage === "dataset") line = gold("◆") + " " + event.index + "/" + event.total + " · " + event.market + " · " + event.dataset;
+    else if (event.stage === "queued") line = gold("◆") + " " + page + "Queued · position " + event.position;
     else if (event.stage === "running") line = gold("◆") + " " + page + "Reading archive page";
     else if (event.stage === "retry") line = warn("↻") + " " + page + (event.busy ? "Server busy" : "Connection retry") + " · next attempt in " + Math.ceil(event.delayMs / 1000) + "s";
     else if (event.stage === "expired") line = warn("↻") + " " + page + "Queue ticket expired; requesting a new one";
@@ -27,7 +28,7 @@ export function createArchiveProgress({ stream = process.stderr, json = false } 
     else return;
     if (line === last) return;
     last = line;
-    const durable = ["resume", "complete", "paused"].includes(event.stage) || (event.stage === "saved" && (event.pages === 1 || event.pages % 10 === 0));
+    const durable = ["dataset", "resume", "complete", "paused"].includes(event.stage) || (event.stage === "saved" && (event.pages === 1 || event.pages % 10 === 0));
     if (stream.isTTY) {
       clear();
       stream.write(line + (durable ? "\n" : ""));
