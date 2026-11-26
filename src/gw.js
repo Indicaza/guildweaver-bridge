@@ -161,7 +161,8 @@ async function main() {
     return;
   }
   if (command === "install-cli") {
-    console.log("CLI installed in " + installCli(config) + ". Add this directory to PATH if needed.");
+    const directory = installCli(config);
+    console.log(process.platform === "win32" ? "CLI registered in your user PATH. Open a new terminal to use gw." : "CLI installed in " + directory + ". Add this directory to PATH if needed.");
     return;
   }
   if (command === "open") { openBrowser(config.holdfastUrl); return; }
