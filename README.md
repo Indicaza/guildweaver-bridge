@@ -369,3 +369,15 @@ gw archive verify --dir D:\GuildweaverData\market-monthly
 ```
 
 The server admits one read-only worker at a time, returns queue tickets, and rejects excess demand with Retry-After. The CLI retries with jitter and a finite wait budget. It verifies each 200-row maximum page before publishing a new gzip file. Use the same command/directory to resume from verified cursor-chain files. Ctrl+C cancels a queued ticket when possible and leaves complete local pages alone. The destination filesystem must support hard links for atomic no-overwrite publication. An archive is a cursor traversal, not a consistent database snapshot; market-current may change between pages. No server data is deleted, no automatic archive is enabled, and only current summaries and finalized monthly history are available.
+
+### Held Auction House transfer
+
+Pause both Auction House ingestion sources and save the settings in the website admin panel. Authorize this PC for archive access and start an archive hold. A hold prevents scheduled market rollups and pruning while the existing history is transferred. It is not a full database backup. Use an empty directory on the intended local drive:
+
+```powershell
+gw archive status
+gw archive pull-all --dir "D:\GuildweaverData\archive\transfer-01"
+gw archive verify-all --dir "D:\GuildweaverData\archive\transfer-01"
+```
+
+The transfer includes current summaries and every retained hourly, daily, weekly and monthly series row for every advertised market, including non-final months. It writes bounded SHA-256-verified gzip batches and a local transfer plan. Repeat the same pull-all command after interruption; a changed hold or market list requires a different destination. The hold must stay active until the final server status check and local verification succeed. A final verified.json receipt binds the plan to the verified page chains. This is not authorization to delete production data: raw observations, ladders, provider records and non-market state are not included. A separate restore-tested database backup is required before destructive cleanup.
