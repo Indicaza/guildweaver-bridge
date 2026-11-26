@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { startAgent } from "./agent.js";
+import { normalizeDomains } from "./domains.js";
+import { notify } from "./notifications.js";
 import process from "node:process";
 
 import { ensureAddonCurrent } from "./addonManager.js";
@@ -26,6 +32,7 @@ import {
 import { enableFileLogging } from "./logger.js";
 import {
   ensurePackagedBridgeCurrent,
+  packagedRuntime,
   installPackagedBridge,
 } from "./packageUpdater.js";
 import { clearCredentials, ensurePaired } from "./pairing.js";
@@ -194,6 +201,14 @@ async function main() {
   }
 
   let releaseInstanceLock = null;
+  let manualInFlight = false;
+  let closeAgent = null;
+  const updateMarker = config.lockPath + ".update.json";
+  const announce = async (title, message) => {
+    console.log(`${title}: ${message}`);
+    const result = await notify(config, title, message);
+    if (result.status === "unavailable") console.log("Desktop notification unavailable; event retained in bridge log.");
+  };
 
   if (command === "watch") {
     releaseInstanceLock = acquireInstanceLock(config.lockPath);
@@ -212,7 +227,7 @@ async function main() {
   };
 
   const checkBridgeUpdate = async () => {
-    if (!backgroundMode) return null;
+    if (!backgroundMode && !manualInFlight) return null;
 
     try {
       const sourceResult = updateBridgeSource();
@@ -227,6 +242,10 @@ async function main() {
   };
 
   const restartIntoUpdatedBridge = (result) => {
+    fs.mkdirSync(path.dirname(updateMarker), { recursive: true });
+    fs.writeFileSync(updateMarker, JSON.stringify({ commit: result.commit, releaseVersion: result.releaseVersion || null }), { mode: 0o600 });
+    closeAgent?.();
+    closeAgent = null;
     if (result.status === "package-update-staged") {
       console.log(
         `Guildweaver Bridge package updated ${String(result.previousCommit || "").slice(0, 8)} -> ${String(result.commit || "").slice(0, 8)}. Restarting...`,
@@ -254,13 +273,14 @@ async function main() {
 
   let addonUpdateInFlight = false;
   const updateAddon = async () => {
-    if (addonUpdateInFlight) return;
+    if (addonUpdateInFlight || manualInFlight) return;
     addonUpdateInFlight = true;
 
     try {
       const result = await ensureAddonCurrent(config);
       const message = describeAddonUpdate(result);
       if (message) console.log(message);
+      if (["updated", "developer-updated"].includes(result?.status)) await announce("Guildweaver addon updated", `${result.releaseVersion || result.commit?.slice(0, 8) || "New build"} installed. Reload WoW to load it.`);
     } catch (error) {
       console.error(`Guildweaver addon update: ${error.message}`);
     } finally {
@@ -289,19 +309,20 @@ async function main() {
   }
 
   const checkLiveServer = createLiveServerCheck(config);
-  const syncWithRepair = async ({ reconcileState = false } = {}) => {
+  const syncWithRepair = async ({ reconcileState = false, domains = [], manual = false } = {}) => {
     await checkLiveServer();
     try {
-      return await syncOnce(runtimeConfig, { reconcileState });
+      return await syncOnce(runtimeConfig, { reconcileState, domains, manual });
     } catch (error) {
       if (!String(error?.message || "").includes("invalid_device_token")) {
         throw error;
       }
 
       console.log("Holdfast connection expired or was revoked. Reconnecting…");
+      if (manual) throw error;
       clearCredentials(config.credentialsPath);
       await pairRuntime();
-      return syncOnce(runtimeConfig, { reconcileState });
+      return syncOnce(runtimeConfig, { reconcileState, domains, manual });
     }
   };
 
@@ -313,7 +334,7 @@ async function main() {
 
   const run = async ({ reconcileState = false } = {}) => {
     if (reconcileState) reconcileRequested = true;
-    if (syncInFlight || Date.now() < retryAt) return false;
+    if (syncInFlight || manualInFlight || Date.now() < retryAt) return false;
 
     syncInFlight = true;
     const shouldReconcile = reconcileRequested;
@@ -357,6 +378,17 @@ async function main() {
 
   await run({ reconcileState: true });
 
+  if (command === "watch") {
+    try {
+      const pending = JSON.parse(fs.readFileSync(updateMarker, "utf8"));
+      const commit = packagedRuntime()?.release?.commit || execFileSync("git", ["rev-parse", "HEAD"], { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim();
+      if (pending.commit && pending.commit === commit) {
+        fs.rmSync(updateMarker, { force: true });
+        await announce("Guildweaver bridge updated", `${pending.releaseVersion || commit.slice(0, 8)} is running.`);
+      }
+    } catch {}
+  }
+
   if (command === "once") {
     return;
   }
@@ -387,7 +419,7 @@ async function main() {
     };
 
     const checkBridgeAndRestart = () => {
-      if (stopping) return Promise.resolve(false);
+      if (stopping || manualInFlight || syncInFlight || addonUpdateInFlight) return Promise.resolve(false);
       if (bridgeUpdatePromise) return bridgeUpdatePromise;
 
       bridgeUpdatePromise = (async () => {
@@ -414,6 +446,8 @@ async function main() {
       if (stopping) return;
       stopping = true;
       clearWatchTimers();
+      closeAgent?.();
+      closeAgent = null;
       releaseLock();
       resolve();
     };
@@ -438,6 +472,48 @@ async function main() {
         await run({ reconcileState: true });
       }
     }, WOW_PROCESS_POLL_INTERVAL_MS);
+
+    void startAgent(config, async (operation, args) => {
+      if (stopping || manualInFlight || syncInFlight || addonUpdateInFlight || bridgeUpdatePromise) throw new Error("Bridge busy; retry in a moment.");
+      if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) throw new Error("Invalid command arguments");
+      manualInFlight = true;
+      try {
+        if (operation === "sync") {
+          normalizeDomains(args);
+          const result = await syncWithRepair({ domains: args, manual: true });
+          console.log("Manual synchronization complete: " + JSON.stringify(result));
+          return result;
+        }
+        if (operation === "update") {
+          if (args.length !== 1 || !["all", "addon", "bridge"].includes(args[0])) throw new Error("Choose addon, bridge or all");
+          const result = {};
+          if (args[0] !== "bridge") {
+            result.addon = await ensureAddonCurrent(config);
+            if (["updated", "developer-updated"].includes(result.addon?.status)) {
+              await announce("Guildweaver addon updated", (result.addon.releaseVersion || result.addon.commit?.slice(0, 8) || "New build") + " installed. Reload WoW to load it.");
+            }
+          }
+          if (args[0] !== "addon") {
+            result.bridge = await checkBridgeUpdate();
+            if (["updated", "package-update-staged"].includes(result.bridge?.status)) {
+              stopping = true;
+              clearWatchTimers();
+              const replacement = result.bridge;
+              setTimeout(() => {
+                try { restartIntoUpdatedBridge(replacement); resolve(); }
+                catch (error) { console.error("Bridge restart failed: " + error.message); releaseLock(); resolve(); }
+              }, 250);
+              result.bridge = { status: "restart-scheduled", commit: replacement.commit, releaseVersion: replacement.releaseVersion };
+            }
+          }
+          return result;
+        }
+        throw new Error("Unknown agent operation");
+      } finally { manualInFlight = false; }
+    }).then((close) => {
+      if (stopping) close();
+      else closeAgent = close;
+    }).catch((error) => console.error("Local command agent unavailable: " + error.message));
 
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
