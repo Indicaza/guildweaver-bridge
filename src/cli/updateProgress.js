@@ -36,7 +36,7 @@ export function updateAction(result) {
 
 export function createUpdateProgress(target, { stream = process.stdout, json = false } = {}) {
   const components = target === "all" ? ["addon", "bridge"] : [target];
-  const states = Object.fromEntries(components.map(key => [key, { label: "Waiting to check", tone: "info" }]));
+  const states = Object.fromEntries(components.map(key => [key, { label: "Checking", tone: "info" }]));
   let activity = "Checking for updates…", rendered = false, finished = false;
   const tty = stream.isTTY && (stream.columns || 80) >= 64;
   const decorated = state => {
@@ -61,7 +61,7 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       if (json) return;
       stream.write("\n" + gold("◆ GUILDWEAVER") + "  Update\n");
       if (tty) draw();
-      else for (const key of components) stream.write("  " + names[key] + "  Waiting to check\n");
+      else for (const key of components) stream.write("  " + names[key] + "  Checking\n");
     },
     show(event) {
       if (json || finished || !components.includes(event?.component)) return;
@@ -69,14 +69,15 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       if (event.stage === "result") {
         set(key, describeUpdate(event));
         if (!tty) stream.write("  " + names[key] + "  " + decorated(states[key]) + "\n");
-        activity = names[key] + " · " + states[key].label;
+        activity = names[key] + " · " + (states[key].detail || states[key].label);
         draw();
         return;
       }
       const description = updateActivity(event);
       if (!description) return;
-      if (event.stage === "checking") set(key, { label: "Checking…", tone: "info" });
-      else if (event.stage === "available") set(key, { label: "Updating now" + (version(event) ? " · " + version(event) : ""), tone: "info" });
+      if (event.stage === "checking") set(key, { label: "Checking", tone: "info" });
+      else if (event.stage === "restarting") set(key, { label: "Restarting", tone: "info" });
+      else if (event.stage === "available") set(key, { label: "Updating", tone: "info" });
       activity = names[key] + " · " + description;
       if (tty) draw();
       else stream.write("  " + activity + "\n");
@@ -88,6 +89,9 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       activity = result.bridge?.status === "restart-scheduled" ? "Restarting automatically · no action needed." : "Update check complete.";
       if (tty) draw();
       else for (const key of components) stream.write("  " + names[key] + "  " + decorated(states[key]) + "\n");
+      for (const key of components) {
+        if (states[key].detail) stream.write("  " + names[key] + ": " + warn(states[key].detail) + "\n");
+      }
       const action = updateAction(result.addon);
       if (action) stream.write("  " + warn(action) + "\n");
       if (result.bridge?.status === "restart-scheduled") stream.write("  " + muted("Bridge activation pending; Guildweaver will restart itself. No manual restart needed.") + "\n");

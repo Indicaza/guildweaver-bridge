@@ -2,15 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { describeUpdate } from "../src/cli/updateStatus.js";
 
-test("current packaged and addon builds share a clear success label", () => {
+test("all current and updated variants have identical labels regardless of version", () => {
   for (const status of ["current", "package-current", "developer-current"]) {
-    assert.deepEqual(describeUpdate({ status, releaseVersion: "0.9.0" }), { label: "Up to date · 0.9.0", tone: "success" });
+    assert.deepEqual(describeUpdate({ status, releaseVersion: "0.9.0" }), { label: "Up to date", tone: "success" });
+  }
+  for (const status of ["updated", "developer-updated"]) {
+    assert.deepEqual(describeUpdate({ status, commit: "abc12345" }), { label: "Updated", tone: "success" });
   }
 });
-test("staged package does not claim the new version is running", () => {
-  const result = describeUpdate({ status: "restart-scheduled", releaseVersion: "0.9.1" });
-  assert.equal(result.tone, "info");
-  assert.match(result.label, /Update ready.*restarting automatically.*0\.9\.1/);
-  assert.equal(describeUpdate({ status: "failed" }).tone, "error");
-  assert.equal(describeUpdate({ status: "release-unavailable" }).tone, "warning");
+
+test("restart, failure and skipped states are short and reasons are separate", () => {
+  assert.deepEqual(describeUpdate({ status: "restart-scheduled", releaseVersion: "0.9.1" }), { label: "Restarting", tone: "info" });
+  assert.deepEqual(describeUpdate({ status: "failed" }), { label: "Failed", tone: "error" });
+  for (const status of ["dirty", "developer-dirty", "branch", "developer-branch"]) {
+    const result = describeUpdate({ status });
+    assert.equal(result.label, "Skipped");
+    assert.ok(result.detail);
+  }
+  assert.equal(describeUpdate({ status: "release-unavailable" }).label, "Unavailable");
 });
