@@ -47,6 +47,49 @@ async function responseJson(response) {
   }
 }
 
+function ownerPath(config) {
+  return config.credentialsPath + ".owner.json";
+}
+
+function accountOwner(config, credentials) {
+  const memberId = credentials?.memberId;
+  const holdfastUrl = String(credentials?.holdfastUrl || "").replace(/\/+$/, "");
+  if (typeof memberId !== "string" || !memberId.trim() || !holdfastUrl || holdfastUrl !== config.holdfastUrl) {
+    throw new Error("Guildweaver pairing lacks a verified account or matches a different website. Sync blocked to protect local data.");
+  }
+  return { schemaVersion: 1, memberId, holdfastUrl };
+}
+
+function readOwner(config) {
+  const file = ownerPath(config);
+  if (!fs.existsSync(file)) return null;
+  const value = readJson(file);
+  if (value?.schemaVersion !== 1 || typeof value.memberId !== "string" || !value.memberId.trim()
+      || typeof value.holdfastUrl !== "string" || !value.holdfastUrl) {
+    throw new Error("Guildweaver account binding is unreadable. Restore the local account binding before syncing.");
+  }
+  return value;
+}
+
+function verifyOwner(config, credentials) {
+  const wanted = accountOwner(config, credentials);
+  const file = ownerPath(config);
+  const assertMatch = (existing) => {
+    if (!existing || existing.memberId !== wanted.memberId || existing.holdfastUrl !== wanted.holdfastUrl) {
+      throw new Error("Guildweaver account mismatch. Pair using the original account; local telemetry was not uploaded.");
+    }
+  };
+  const existing = readOwner(config);
+  if (existing) { assertMatch(existing); return; }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  try {
+    fs.writeFileSync(file, JSON.stringify(wanted) + "\n", { mode: 0o600, flag: "wx" });
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    assertMatch(readOwner(config));
+  }
+}
+
 export function readCredentials(credentialsPath) {
   const value = readJson(credentialsPath);
 
@@ -93,12 +136,16 @@ export async function ensurePaired(
   } = {},
 ) {
   const existing = readCredentials(config.credentialsPath);
-
-  if (
-    existing?.deviceToken &&
-    String(existing.holdfastUrl || "").replace(/\/+$/, "") === config.holdfastUrl
-  ) {
+  const owner = readOwner(config);
+  if (owner && owner.holdfastUrl !== config.holdfastUrl) {
+    throw new Error("Guildweaver is bound to another website. Sync blocked to protect local data.");
+  }
+  if (existing?.deviceToken) {
+    verifyOwner(config, existing);
     return existing;
+  }
+  if (!owner && config.statePath && fs.existsSync(config.statePath)) {
+    throw new Error("Existing synchronization state has no account binding. Restore the original credentials before pairing; local data has been preserved.");
   }
 
   const startResponse = await fetchImpl(`${config.holdfastUrl}/api/bridge/pairing/start`, {
@@ -146,6 +193,7 @@ export async function ensurePaired(
         pairedAt: new Date().toISOString(),
       };
 
+      verifyOwner(config, credentials);
       writeJsonAtomic(config.credentialsPath, credentials);
       log("Guildweaver connected to Holdfast.");
       return credentials;

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { ensurePaired } from "../src/pairing.js";
+import { ensurePaired, clearCredentials } from "../src/pairing.js";
 
 test("first run opens browser, polls, and persists a device credential", async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "guildweaver-pairing-"));
@@ -86,4 +86,40 @@ test("first run opens browser, polls, and persists a device credential", async (
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+
+test("account binding survives revoked credentials and prevents a replacement account from uploading", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "gw-owner-"));
+  const config = { holdfastUrl: "https://example.test", credentialsPath: path.join(directory, "credentials.json"), statePath: path.join(directory, "state.json") };
+  const old = { holdfastUrl: config.holdfastUrl, memberId: "member-original", deviceId: "old-device", deviceToken: "old-token" };
+  const bind = (memberId) => ({
+    log: () => {}, openBrowserImpl: () => {}, sleepImpl: async () => {},
+    fetchImpl: async (url) => new Response(JSON.stringify(url.endsWith("/start")
+      ? { deviceCode: "code", verificationUri: config.holdfastUrl, userCode: "ABC" }
+      : { status: "connected", memberId, deviceId: "new-device", deviceToken: "new-token" })),
+  });
+  try {
+    fs.writeFileSync(config.credentialsPath, JSON.stringify(old));
+    fs.writeFileSync(config.statePath, "preserve me");
+    assert.deepEqual(await ensurePaired(config), old);
+    assert.equal(JSON.parse(fs.readFileSync(config.credentialsPath + ".owner.json")).memberId, old.memberId);
+    clearCredentials(config.credentialsPath);
+    await assert.rejects(ensurePaired(config, bind("wrong-member")), /account mismatch/);
+    assert.equal(fs.existsSync(config.credentialsPath), false);
+    assert.equal(fs.readFileSync(config.statePath, "utf8"), "preserve me");
+    const replacement = await ensurePaired(config, bind(old.memberId));
+    assert.equal(replacement.deviceId, "new-device");
+    await assert.rejects(ensurePaired({ ...config, holdfastUrl: "https://other.test" }), /another website/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("legacy state without original credentials cannot be silently assigned to a new account", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "gw-owner-legacy-"));
+  const config = { holdfastUrl: "https://example.test", credentialsPath: path.join(directory, "credentials.json"), statePath: path.join(directory, "state.json") };
+  try {
+    fs.writeFileSync(config.statePath, "legacy-state");
+    await assert.rejects(ensurePaired(config, { fetchImpl: assert.fail }), /no account binding/);
+    assert.equal(fs.readFileSync(config.statePath, "utf8"), "legacy-state");
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
