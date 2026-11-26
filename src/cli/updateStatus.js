@@ -9,7 +9,7 @@ const DETAILS = {
   "developer-branch": "Non-main branch preserved.",
 };
 export function describeUpdate(result) {
-  if (CURRENT.has(result?.status)) return { label: "Current", tone: "success" };
+  if (CURRENT.has(result?.status)) return { label: "Up to date", tone: "success" };
   if (result?.status === "restart-scheduled") return { label: "Updating", tone: "info" };
   const detail = result?.detail || DETAILS[result?.status] || (result?.status === "failed" ? "" : "Update status unavailable.");
   return { label: "Failed", tone: "error", ...(detail ? { detail } : {}) };
