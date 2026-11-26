@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { findAddonPath } from "./discovery.js";
+import { downloadUpdate } from "./updateDownload.js";
 
 const RELEASE_DOWNLOAD_ROOT =
   "https://github.com/Indicaza/guildweaver/releases/download";
@@ -80,7 +81,7 @@ function runGit(cwd, args, execImpl = execFileSync) {
   ).trim();
 }
 
-export function updateDeveloperCheckout(checkoutPath, { execImpl = execFileSync } = {}) {
+export function updateDeveloperCheckout(checkoutPath, { execImpl = execFileSync, progress = () => {} } = {}) {
   const branch = runGit(
     checkoutPath,
     ["rev-parse", "--abbrev-ref", "HEAD"],
@@ -105,6 +106,8 @@ export function updateDeveloperCheckout(checkoutPath, { execImpl = execFileSync 
     return { status: "developer-current", path: checkoutPath, commit: before };
   }
 
+  progress({ stage: "available", commit: remote });
+  progress({ stage: "installing" });
   runGit(checkoutPath, ["merge", "--ff-only", "origin/main"], execImpl);
   const after = runGit(checkoutPath, ["rev-parse", "HEAD"], execImpl);
   return { status: "developer-updated", path: checkoutPath, commit: after };
@@ -160,13 +163,14 @@ export async function ensureAddonCurrent(
     fetchImpl = fetch,
     execImpl = execFileSync,
     extractArchive = extractArchiveDefault,
+    progress = () => {},
   } = {},
 ) {
   const addonPath = findAddonPath(config);
   const checkout = developerCheckout(addonPath);
 
   if (checkout) {
-    return updateDeveloperCheckout(checkout, { execImpl });
+    return updateDeveloperCheckout(checkout, { execImpl, progress });
   }
 
   const assets = releaseAssetUrls(config.addonUpdateChannel);
@@ -198,6 +202,7 @@ export async function ensureAddonCurrent(
     };
   }
 
+  progress({ stage: "available", releaseVersion: manifest.releaseVersion, commit: manifest.commit });
   fs.mkdirSync(config.dataDirectory, { recursive: true });
   const downloadRoot = fs.mkdtempSync(path.join(config.dataDirectory, "addon-download-"));
   const archivePath = path.join(downloadRoot, "Guildweaver.zip");
@@ -213,7 +218,8 @@ export async function ensureAddonCurrent(
     if (!archiveResponse.ok) {
       throw new Error(`Unable to download Guildweaver: HTTP ${archiveResponse.status}`);
     }
-    fs.writeFileSync(archivePath, Buffer.from(await archiveResponse.arrayBuffer()));
+    await downloadUpdate(archiveResponse, archivePath, progress);
+    progress({ stage: "verifying" });
 
     const expectedChecksum = (await responseText(await fetchImpl(assets.checksum)))
       .trim()
@@ -225,6 +231,7 @@ export async function ensureAddonCurrent(
       throw new Error("Guildweaver update checksum did not match");
     }
 
+    progress({ stage: "extracting" });
     fs.mkdirSync(extractionRoot, { recursive: true });
     extractArchive(archivePath, extractionRoot);
 
@@ -236,6 +243,7 @@ export async function ensureAddonCurrent(
       throw new Error("Guildweaver update package failed validation");
     }
 
+    progress({ stage: "installing" });
     replaceAddonDirectory(addonPath, stagedAddonPath);
 
     return {
