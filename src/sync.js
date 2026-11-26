@@ -307,6 +307,8 @@ export async function syncOnce(
   let unchangedFiles = 0;
   let uploadAttempts = 0;
   let transientUploadFailure = false;
+  let consecutiveUploadFailures = 0;
+  let stopUploads = false;
   const uploadStartedAt = now();
   let pausedAuctionUntil = auctionPausedUntil.get(config.telemetryEndpoint) || 0;
 
@@ -443,7 +445,7 @@ export async function syncOnce(
           fileOutstanding = true;
           continue;
         }
-        if (transientUploadFailure || uploadAttempts >= maxUploadAttempts
+        if (stopUploads || uploadAttempts >= maxUploadAttempts
             || (uploadAttempts > 0 && now() - uploadStartedAt >= uploadBudgetMs)) {
           telemetryDeferred += 1;
           fileOutstanding = true;
@@ -453,6 +455,7 @@ export async function syncOnce(
         uploadAttempts += 1;
         try {
           const result = await postTelemetry(config, record, fetchImpl);
+          consecutiveUploadFailures = 0;
           state.sentTelemetryRevisions[key] = record.revision;
           if (record.fingerprint) {
             state.sentTelemetryFingerprints[key] = record.fingerprint;
@@ -495,9 +498,12 @@ export async function syncOnce(
             if (auctionPausedUntil.size >= MAX_FILE_WARNINGS) auctionPausedUntil.clear();
             auctionPausedUntil.set(config.telemetryEndpoint, pausedAuctionUntil);
           } else {
-            // Stop this pass's uploads on an unavailable endpoint. The next
-            // poll can retry; downstream requests still get their own attempt.
+            // A record-specific server error must not starve later streams.
+            // Stop after three consecutive failures or an actual timeout.
             transientUploadFailure = true;
+            consecutiveUploadFailures += 1;
+            stopUploads = consecutiveUploadFailures >= 3
+              || error.name === "TimeoutError" || error.name === "AbortError";
           }
           log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
         }
