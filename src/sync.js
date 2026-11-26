@@ -277,6 +277,7 @@ export async function syncOnce(
     uploadBudgetMs = UPLOAD_BUDGET_MS,
     domains: requestedDomains = [],
     manual = false,
+    trace = null,
   } = {},
 ) {
   const domains = normalizeDomains(requestedDomains);
@@ -460,9 +461,17 @@ export async function syncOnce(
         }
 
         uploadAttempts += 1;
+        const startedAt = now();
+        const correlation = trace ? telemetryIdempotencyKey(record) : null;
+        const emit = (stage, level, message, fields = {}) => {
+          if (!trace) return;
+          try { trace({ level, domain: record.envelope.eventType, traceId: correlation, stage, revision: record.revision, message, ...fields }); } catch {}
+        };
+        emit("upload_start", "DEBUG", "Telemetry upload started");
         try {
           const result = await postTelemetry(config, record, fetchImpl);
           consecutiveUploadFailures = 0;
+          emit("http_success", "DEBUG", "Telemetry endpoint returned success", { elapsedMs: now() - startedAt, recordId: result?.recordId ?? null });
           state.sentTelemetryRevisions[key] = record.revision;
           if (record.fingerprint) {
             state.sentTelemetryFingerprints[key] = record.fingerprint;
@@ -476,6 +485,7 @@ export async function syncOnce(
               (result?.status ? ` (${result.status})` : ""),
           );
         } catch (error) {
+          emit("upload_failed", "ERROR", "Telemetry upload failed", { elapsedMs: now() - startedAt, httpStatus: error.status ?? null });
           if (invalidDeviceToken(error)) throw error;
           telemetryFailed += 1;
 
