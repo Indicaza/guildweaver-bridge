@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { syncOnce } from "../src/sync.js";
+import { fixtureSyncOnce as syncOnce } from "../testSupport/telemetryReceipt.js";
 
 function fixtureSource() {
   return fs.readFileSync(
