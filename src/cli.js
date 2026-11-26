@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { startAgent } from "./agent.js";
 import { normalizeDomains } from "./domains.js";
 import { notify } from "./notifications.js";
+import { debugEnabled } from "./cli/logs.js";
 import process from "node:process";
 
 import { ensureAddonCurrent } from "./addonManager.js";
@@ -236,6 +237,7 @@ async function main() {
       }
       return await ensurePackagedBridgeCurrent(config);
     } catch (error) {
+      if (manualInFlight) throw error;
       console.error(`Guildweaver Bridge self-update: ${error.message}`);
       return null;
     }
@@ -302,6 +304,9 @@ async function main() {
   };
 
   await pairRuntime();
+  if (command === "watch" && backgroundMode) {
+    try { installCli(config); } catch (error) { console.error("CLI launcher unavailable: " + error.message); }
+  }
 
   if (command === "pair") {
     console.log(`Connected as Holdfast member ${credentials.memberId || "unknown"}.`);
@@ -310,9 +315,10 @@ async function main() {
 
   const checkLiveServer = createLiveServerCheck(config);
   const syncWithRepair = async ({ reconcileState = false, domains = [], manual = false } = {}) => {
+    const trace = debugEnabled(config) ? (event) => console.log(JSON.stringify(event)) : null;
     await checkLiveServer();
     try {
-      return await syncOnce(runtimeConfig, { reconcileState, domains, manual });
+      return await syncOnce(runtimeConfig, { reconcileState, domains, manual, trace });
     } catch (error) {
       if (!String(error?.message || "").includes("invalid_device_token")) {
         throw error;
@@ -322,7 +328,7 @@ async function main() {
       if (manual) throw error;
       clearCredentials(config.credentialsPath);
       await pairRuntime();
-      return syncOnce(runtimeConfig, { reconcileState, domains, manual });
+      return syncOnce(runtimeConfig, { reconcileState, domains, manual, trace });
     }
   };
 
