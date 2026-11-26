@@ -1,4 +1,7 @@
 export const COMMANDS = [
+  ["sync [domain]", "Synchronize saved data through the running bridge"],
+  ["update [addon|bridge]", "Manually check and apply updates"],
+  ["notify [on|off|test]", "Configure or test desktop notifications"],
   ["status", "Show local bridge and pairing health"],
   ["pair", "Connect this computer"],
   ["archive", "Manual archive status and exports"],
