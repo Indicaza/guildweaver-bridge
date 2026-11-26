@@ -6,6 +6,8 @@ export const COMMANDS = [
   ["pair", "Connect this computer"],
   ["archive", "Manual archive status and exports"],
   ["logs", "View recent bridge logs"],
+  ["dev on|off", "Enable or disable detailed upload tracing"],
+  ["dev trace ID", "Find correlated local upload events"],
   ["dev logs", "Filter developer logs by domain and severity"],
   ["install-cli", "Install the local gw launcher"],
   ["open", "Open Guildweaver in your browser"],
