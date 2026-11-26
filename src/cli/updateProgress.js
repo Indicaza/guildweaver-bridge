@@ -24,7 +24,8 @@ export function updateActivity(event) {
     case "extracting": return "Extracting verified archive";
     case "installing": return "Installing update";
     case "staging": return "Staging verified bridge package";
-    case "restarting": return "Restarting background bridge automatically";
+    case "restarting": return "Activating bridge update";
+    case "activation-check": return "Confirming the new bridge is running";
     default: return "";
   }
 }
@@ -36,7 +37,7 @@ export function updateAction(result) {
 
 export function createUpdateProgress(target, { stream = process.stdout, json = false } = {}) {
   const components = target === "all" ? ["addon", "bridge"] : [target];
-  const states = Object.fromEntries(components.map(key => [key, { label: "Checking", tone: "info" }]));
+  const states = Object.fromEntries(components.map(key => [key, { label: "Updating", tone: "info" }]));
   let activity = "Checking for updates…", rendered = false, finished = false;
   const tty = stream.isTTY && (stream.columns || 80) >= 64;
   const decorated = state => {
@@ -61,7 +62,7 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       if (json) return;
       stream.write("\n" + gold("◆ GUILDWEAVER") + "  Update\n");
       if (tty) draw();
-      else for (const key of components) stream.write("  " + names[key] + "  Checking\n");
+      else for (const key of components) stream.write("  " + names[key] + "  Updating\n");
     },
     show(event) {
       if (json || finished || !components.includes(event?.component)) return;
@@ -75,8 +76,8 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       }
       const description = updateActivity(event);
       if (!description) return;
-      if (event.stage === "checking") set(key, { label: "Checking", tone: "info" });
-      else if (event.stage === "restarting") set(key, { label: "Restarting", tone: "info" });
+      if (event.stage === "checking") set(key, { label: "Updating", tone: "info" });
+      else if (event.stage === "restarting") set(key, { label: "Updating", tone: "info" });
       else if (event.stage === "available") set(key, { label: "Updating", tone: "info" });
       activity = names[key] + " · " + description;
       if (tty) draw();
@@ -86,7 +87,7 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       if (json || finished) return;
       finished = true;
       for (const key of components) set(key, describeUpdate(result[key]));
-      activity = result.bridge?.status === "restart-scheduled" ? "Restarting automatically · no action needed." : "Update check complete.";
+      activity = components.some(key => states[key].tone === "error") ? "Update failed." : "Update complete."
       if (tty) draw();
       else for (const key of components) stream.write("  " + names[key] + "  " + decorated(states[key]) + "\n");
       for (const key of components) {
@@ -94,11 +95,12 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       }
       const action = updateAction(result.addon);
       if (action) stream.write("  " + warn(action) + "\n");
-      if (result.bridge?.status === "restart-scheduled") stream.write("  " + muted("Bridge activation pending; Guildweaver will restart itself. No manual restart needed.") + "\n");
+
     },
     fail() {
       if (json || finished) return;
       finished = true;
+      for (const key of components) if (states[key].tone !== "success") set(key, { label: "Failed", tone: "error" });
       activity = "Update interrupted or failed. See the error below.";
       if (tty) draw();
     },

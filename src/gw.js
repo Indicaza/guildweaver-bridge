@@ -16,6 +16,8 @@ import { normalizeDomains } from "./domains.js";
 import { diagnose } from "./doctor.js";
 import { createArchiveProgress } from "./cli/archiveProgress.js";
 import { createUpdateProgress } from "./cli/updateProgress.js";
+import { completeBridgeUpdate } from "./cli/completeUpdate.js";
+import path from "node:path";
 import { notify, notificationsEnabled, setNotifications } from "./notifications.js";
 
 function parseArgs(args) {
@@ -88,10 +90,16 @@ async function main() {
     const renderer = createUpdateProgress(target, { json });
     renderer.start();
     try {
+      const relative = path.relative(config.installDirectory, process.execPath);
+      if (process.platform === "win32" && target !== "addon" && relative && !relative.startsWith(".." + path.sep) && relative !== ".." && !path.isAbsolute(relative)) {
+        throw new Error("Run gw from the refreshed launcher so the Windows bridge package can be replaced safely.");
+      }
+      const previousPid = lockedInstanceStatus(config.lockPath).pid;
       const result = await requestAgent(config, "update", [target], { onProgress: json ? undefined : renderer.show });
+      await completeBridgeUpdate(config, result, { previousPid, progress: renderer.show });
       if (json) console.log(JSON.stringify(result));
       else renderer.finish(result);
-      if (Object.values(result).some(value => value?.status === "failed")) process.exitCode = 1;
+      if (Object.values(result).some(value => !["current", "package-current", "developer-current", "updated", "developer-updated"].includes(value?.status))) process.exitCode = 1;
     } catch (error) {
       renderer.fail();
       throw error;

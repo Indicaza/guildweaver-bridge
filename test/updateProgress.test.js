@@ -25,8 +25,8 @@ test("status panel appears before progress, and reload is only requested for a c
   let output = "";
   const renderer = createUpdateProgress("all", { stream: { isTTY: false, write: text => { output += text; } } });
   renderer.start();
-  assert.match(output, /Addon.*Checking/);
-  assert.match(output, /Bridge.*Checking/);
+  assert.match(output, /Addon.*Updating/);
+  assert.match(output, /Bridge.*Updating/);
   renderer.show({ component: "addon", stage: "available", releaseVersion: "0.5.1" });
   renderer.show({ component: "addon", stage: "verifying" });
   renderer.finish({ addon: { status: "updated", action: "reload" }, bridge: { status: "package-current" } });
@@ -43,7 +43,7 @@ test("both components use identical status wording without release versions", ()
   const renderer = createUpdateProgress("all", { stream: { isTTY: false, write: text => { output += text; } } });
   renderer.start();
   renderer.finish({ addon: { status: "current", releaseVersion: "0.5.0" }, bridge: { status: "package-current", releaseVersion: "0.9.0" } });
-  assert.match(output, /Addon\s+✓ Up to date/);
-  assert.match(output, /Bridge\s+✓ Up to date/);
+  assert.match(output, /Addon\s+✓ Current/);
+  assert.match(output, /Bridge\s+✓ Current/);
   assert.doesNotMatch(output, /package-current|0\.5\.0|0\.9\.0/);
 });
