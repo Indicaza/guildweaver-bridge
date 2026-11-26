@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import util from "node:util";
+import { redact } from "./cli/logs.js";
 
 const MAX_LOG_BYTES = 1024 * 1024;
 
@@ -29,9 +30,14 @@ export function enableFileLogging(filePath) {
   rotateLog(filePath);
 
   const write = (level, values) => {
-    const message = values.map(formatValue).join(" ");
+    const message = redact(values.map(formatValue).join(" "));
     const line = `[${new Date().toISOString()}] ${level} ${message}\n`;
-    fs.appendFileSync(filePath, line, "utf8");
+    try {
+      rotateLog(filePath);
+      fs.appendFileSync(filePath, line, { encoding: "utf8", mode: 0o600 });
+    } catch {
+      // Logging must not stop gameplay synchronization.
+    }
   };
 
   console.log = (...values) => write("INFO", values);

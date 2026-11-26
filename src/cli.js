@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import process from "node:process";
 
 import { ensureAddonCurrent } from "./addonManager.js";
+import { runArchiveCommand } from "./archive.js";
+import { installCli } from "./cli/install.js";
 import {
   backgroundStatus as nativeBackgroundStatus,
   installBackground as installNativeBackground,
@@ -65,6 +67,8 @@ Usage:
   node src/cli.js install-background [--config path]
   node src/cli.js uninstall-background [--config path]
   node src/cli.js background-status [--config path]
+  node src/cli.js archive status [--config path]
+  node src/cli.js archive pull --dataset DATASET --market KEY --out FILE.json.gz [--cursor CURSOR]
 
 Commands:
   once                 Update Guildweaver, pair if needed, then sync once.
@@ -73,6 +77,8 @@ Commands:
   install-background   Install/update the addon and run the bridge at login.
   uninstall-background Stop it and remove startup registration.
   background-status    Show whether the background bridge is installed/running.
+  archive status       Inspect this computer’s archive authorization and available markets.
+  archive pull         Explicitly download one verified batch; never automatic.
 
 A config file is optional. Standard WoW installs and Holdfast production are discovered automatically.
 `);
@@ -118,6 +124,7 @@ async function main() {
     "install-background",
     "uninstall-background",
     "background-status",
+    "archive",
   ]);
 
   if (!commands.has(command)) {
@@ -128,6 +135,11 @@ async function main() {
 
   const configPath = optionValue(args, "--config") || "guildweaver-bridge.json";
   const config = loadConfig(configPath);
+
+  if (command === "archive") {
+    await runArchiveCommand(config, args.slice(1));
+    return;
+  }
 
   if (command === "install-package") {
     const installed = installPackagedBridge(config);
@@ -172,6 +184,8 @@ async function main() {
     const addonMessage = describeAddonUpdate(addonResult);
     if (addonMessage) console.log(addonMessage);
     const installed = platformBackground.installBackground(config);
+    const binDirectory = installCli(config);
+    console.log(`Guildweaver CLI installed in ${binDirectory}; add that directory to PATH to use gw.`);
     console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     console.log("Guildweaver addon is installed and automatic updates are enabled.");
     console.log("Background sync installed and started. It will launch automatically when you sign in.");
