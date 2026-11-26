@@ -21,6 +21,7 @@ function runGit(cwd, args, execImpl = execFileSync) {
 export function updateBridgeSource({
   checkoutPath = repositoryRoot(),
   execImpl = execFileSync,
+  progress = () => {},
 } = {}) {
   if (!fs.existsSync(path.join(checkoutPath, ".git"))) {
     return { status: "not-source-checkout", path: checkoutPath };
@@ -44,6 +45,8 @@ export function updateBridgeSource({
     return { status: "current", commit: before, path: checkoutPath };
   }
 
+  progress({ stage: "available", commit: remote });
+  progress({ stage: "installing" });
   runGit(checkoutPath, ["merge", "--ff-only", "origin/main"], execImpl);
   const after = runGit(checkoutPath, ["rev-parse", "HEAD"], execImpl);
 

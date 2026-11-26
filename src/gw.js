@@ -15,6 +15,7 @@ import { requestAgent } from "./agent.js";
 import { normalizeDomains } from "./domains.js";
 import { diagnose } from "./doctor.js";
 import { createArchiveProgress } from "./cli/archiveProgress.js";
+import { createUpdateProgress } from "./cli/updateProgress.js";
 import { notify, notificationsEnabled, setNotifications } from "./notifications.js";
 
 function parseArgs(args) {
@@ -83,13 +84,17 @@ async function main() {
   }
   if (command === "update") {
     if (rest.length > 1 || (rest.length && !["addon", "bridge", "all"].includes(rest[0]))) throw new Error("Use gw update [addon|bridge|all]");
-    const result = await loading("Checking and applying updates…", () => requestAgent(config, "update", [rest[0] || "all"]), { json });
-    if (json) console.log(JSON.stringify(result));
-    else {
-      heading("Update");
-      rows(Object.entries(result).map(([key, value]) => [key, value?.status || "Unavailable"]));
-      if (["updated", "developer-updated"].includes(result.addon?.status)) console.log(warn("Reload WoW to load the updated addon."));
-      if (result.bridge?.status === "restart-scheduled") console.log(muted("Restart scheduled. The new process will notify when running."));
+    const target = rest[0] || "all";
+    const renderer = createUpdateProgress(target, { json });
+    renderer.start();
+    try {
+      const result = await requestAgent(config, "update", [target], { onProgress: json ? undefined : renderer.show });
+      if (json) console.log(JSON.stringify(result));
+      else renderer.finish(result);
+      if (Object.values(result).some(value => value?.status === "failed")) process.exitCode = 1;
+    } catch (error) {
+      renderer.fail();
+      throw error;
     }
     return;
   }

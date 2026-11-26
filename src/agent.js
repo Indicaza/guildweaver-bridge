@@ -29,7 +29,14 @@ export async function startAgent(config, handler) {
       try {
         const request = JSON.parse(buffer.slice(0, buffer.indexOf("\n")));
         if (closing || !safeEqual(request.token, token)) throw new Error("Agent authorization failed");
-        const result = await handler(request.command, request.args);
+        const progress = (event) => {
+          if (request.progress !== true || socket.destroyed || !socket.writable) return;
+          try {
+            const frame = JSON.stringify({ progress: event }) + "\n";
+            if (Buffer.byteLength(frame) <= MAX_BYTES && socket.writableLength < MAX_BYTES) socket.write(frame);
+          } catch {}
+        };
+        const result = await handler(request.command, request.args, progress);
         socket.end(JSON.stringify({ ok: true, result }) + "\n");
       } catch (error) {
         socket.end(JSON.stringify({ ok: false, error: String(error.message).slice(0, 500) }) + "\n");
@@ -62,7 +69,7 @@ export async function startAgent(config, handler) {
   server.unref();
   return () => { closing = true; server.close(); clean(); process.removeListener("exit", clean); };
 }
-export async function requestAgent(config, command, args = []) {
+export async function requestAgent(config, command, args = [], { onProgress } = {}) {
   let descriptor;
   try {
     descriptor = JSON.parse(fs.readFileSync(descriptorPath(config), "utf8"));
@@ -70,20 +77,34 @@ export async function requestAgent(config, command, args = []) {
   } catch { throw new Error("Guildweaver background agent is not available. Start the installed bridge first."); }
   return new Promise((resolve, reject) => {
     const socket = net.createConnection(descriptor.address);
+    socket.setEncoding("utf8");
     let buffer = "";
     socket.setTimeout(120_000, () => socket.destroy(new Error("Agent response timed out; the operation may still be running")));
     socket.once("error", reject);
-    socket.once("connect", () => socket.write(JSON.stringify({ token: descriptor.token, command, args }) + "\n"));
+    socket.once("connect", () => socket.write(JSON.stringify({ token: descriptor.token, command, args, ...(typeof onProgress === "function" ? { progress: true } : {}) }) + "\n"));
     socket.on("data", (chunk) => {
-      buffer += chunk.toString("utf8");
-      if (Buffer.byteLength(buffer) > MAX_BYTES) { socket.destroy(new Error("Agent response too large")); return; }
-      if (!buffer.includes("\n")) return;
+      buffer += chunk;
       try {
-        const response = JSON.parse(buffer.slice(0, buffer.indexOf("\n")));
-        if (!response.ok) throw new Error(response.error || "Agent operation failed");
-        resolve(response.result);
-      } catch (error) { reject(error); }
-      socket.end();
+        let newline;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          if (Buffer.byteLength(line) > MAX_BYTES) throw new Error("Agent response too large");
+          const response = JSON.parse(line);
+          if (response.progress && typeof response.progress === "object") {
+            if (typeof onProgress === "function") { try { onProgress(response.progress); } catch {} }
+            continue;
+          }
+          if (!response.ok) throw new Error(response.error || "Agent operation failed");
+          resolve(response.result);
+          socket.end();
+          return;
+        }
+        if (Buffer.byteLength(buffer) > MAX_BYTES) throw new Error("Agent response too large");
+      } catch (error) {
+        reject(error);
+        socket.destroy();
+      }
     });
     socket.once("end", () => reject(new Error("Agent disconnected before replying")));
   });

@@ -37,3 +37,22 @@ test("notifications are opt-out and failures remain nonfatal", async () => {
     assert.equal((await notify(config, "GW", "message", { platform: "darwin", execImpl: async () => { throw Error("no desktop"); } })).status, "unavailable");
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
+
+
+test("progress frames are streamed in order before the terminal reply and legacy clients still work", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "gw-progress-agent-"));
+  const config = { lockPath: path.join(directory, "bridge.lock") };
+  const events = [];
+  const close = await startAgent(config, async (_command, _args, progress) => {
+    progress({ stage: "downloading", received: 128, total: 256 });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    progress({ stage: "verifying" });
+    return { status: "current" };
+  });
+  try {
+    const result = await requestAgent(config, "update", ["all"], { onProgress: event => events.push(event) });
+    assert.deepEqual(result, { status: "current" });
+    assert.deepEqual(events, [{ stage: "downloading", received: 128, total: 256 }, { stage: "verifying" }]);
+    assert.deepEqual(await requestAgent(config, "update", ["all"]), result);
+  } finally { close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
