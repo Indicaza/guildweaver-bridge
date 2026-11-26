@@ -8,9 +8,12 @@ import { lockedInstanceStatus } from "./instanceLock.js";
 import { packagedRuntime } from "./packageUpdater.js";
 import { runArchiveCommand } from "./archive.js";
 import { COMMANDS } from "./cli/registry.js";
-import { heading, rows, gold, muted, green, warn, red } from "./cli/output.js";
-import { showLogs } from "./cli/logs.js";
+import { heading, rows, gold, muted, green, warn, red, loading } from "./cli/output.js";
+import { showLogs, debugEnabled, setDebug } from "./cli/logs.js";
 import { installCli } from "./cli/install.js";
+import { requestAgent } from "./agent.js";
+import { normalizeDomains } from "./domains.js";
+import { notify, notificationsEnabled, setNotifications } from "./notifications.js";
 
 function parseArgs(args) {
   const rest = [...args];
@@ -51,6 +54,38 @@ async function main() {
     }
     return;
   }
+  if (command === "sync") {
+    normalizeDomains(rest);
+    const result = await loading("Synchronizing saved game data…", () => requestAgent(config, "sync", rest), { json });
+    if (json) console.log(JSON.stringify(result));
+    else {
+      heading("Synchronization · " + (rest.join(", ") || "all"));
+      rows([["Files", String(result.files)], ["Uploaded", green(String(result.telemetrySent))], ["Skipped", String(result.telemetrySkipped)], ["Deferred", warn(String(result.telemetryDeferred))], ["Failed", result.telemetryFailed ? red(String(result.telemetryFailed)) : "0"], ["Rejected", String(result.telemetryRejected)], ["Unreadable files", String(result.skippedFiles)], ["Wishlist", result.lootSync], ["Quest inbox", result.questSyncFailed ? "Failed" : result.questSnapshotUpdated ? "Updated" : "Unchanged"]]);
+      console.log(muted("WoW must save data with /reload or logout before it can be uploaded."));
+    }
+    if (result.telemetryFailed || result.questSyncFailed || result.skippedFiles || result.lootSync === "failed") process.exitCode = 1;
+    return;
+  }
+  if (command === "update") {
+    if (rest.length > 1 || (rest.length && !["addon", "bridge", "all"].includes(rest[0]))) throw new Error("Use gw update [addon|bridge|all]");
+    const result = await loading("Checking and applying updates…", () => requestAgent(config, "update", [rest[0] || "all"]), { json });
+    if (json) console.log(JSON.stringify(result));
+    else {
+      heading("Update");
+      rows(Object.entries(result).map(([key, value]) => [key, value?.status || "Unavailable"]));
+      if (["updated", "developer-updated"].includes(result.addon?.status)) console.log(warn("Reload WoW to load the updated addon."));
+      if (result.bridge?.status === "restart-scheduled") console.log(muted("Restart scheduled. The new process will notify when running."));
+    }
+    return;
+  }
+  if (command === "notify") {
+    if (rest.length > 1) throw new Error("Use gw notify [on|off|test]");
+    if (!rest.length) console.log(notificationsEnabled(config) ? "Notifications enabled" : "Notifications disabled");
+    else if (rest[0] === "on" || rest[0] === "off") { setNotifications(config, rest[0] === "on"); console.log("Notifications " + (rest[0] === "on" ? "enabled" : "disabled")); }
+    else if (rest[0] === "test") { const result = await notify(config, "Guildweaver", "Desktop notification test", { test: true }); console.log("Notification: " + result.status); if (result.status !== "requested") process.exitCode = 1; }
+    else throw new Error("Use gw notify [on|off|test]");
+    return;
+  }
   if (command === "archive") {
     if (rest.length === 0) {
       heading("Archive");
@@ -58,6 +93,15 @@ async function main() {
       return;
     }
     await runArchiveCommand(config, rest);
+    return;
+  }
+  if (command === "dev" && ["on", "off", "status"].includes(rest[0]) && rest.length === 1) {
+    if (rest[0] !== "status") setDebug(config, rest[0] === "on");
+    console.log("Debug tracing " + (debugEnabled(config) ? "enabled" : "disabled"));
+    return;
+  }
+  if (command === "dev" && rest[0] === "trace" && rest.length === 2) {
+    await showLogs(config, { traceId: rest[1], count: 1000, json });
     return;
   }
   if (command === "logs" || (command === "dev" && rest[0] === "logs")) {

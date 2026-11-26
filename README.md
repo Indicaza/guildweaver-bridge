@@ -351,3 +351,11 @@ gw archive status
 gw open
 ```
 The dev log viewer supports follow mode, rotation detection and JSON output; domain filtering on legacy text logs is heuristic. Debug records are not fabricated. It does not download data or alter synchronization. Archive data transfer still requires explicit authorization and an output destination.
+
+## Manual agent operations
+
+After the updated background bridge has started, `gw sync` requests a bounded full sync pass from the running agent, rather than creating a competing process. Use `gw sync character`, `gw sync ah`, `gw sync telemetry` (all upload telemetry, no inbox pulls), `gw sync professions wishlist`, or `gw sync quests`. It only reads game data already saved to disk. A busy bridge returns an error rather than racing a scheduled job. Scoped uploads preserve other domains' checkpoint and acknowledgment state; the next normal full pass writes the complete acknowledgement mailbox.
+
+`gw update [addon|bridge]` uses the existing verified update mechanisms. Bridge replacement reports restart-scheduled until the new process confirms its commit. The addon notification says installed and requests a WoW reload, not that the new code has loaded. `gw notify test`, `gw notify off`, and `gw notify on` control desktop notifications. macOS uses osascript, Linux notify-send, and Windows PowerShell/WinRT toasts; desktop notification delivery depends on permissions, desktop session and platform availability. Failure is logged, not fatal. The Windows application identity and packaged desktop notifications still need live verification.
+
+`gw dev on` enables structured per-upload debug events in the rotating bridge log, including correlation ID, revision, latency and HTTP outcome; `gw dev off` disables them. `gw dev logs ah` follows a domain, `gw dev trace ID` finds recorded local stages, and `--json` emits structured rows. This is local transport tracing, not yet full addon-to-database distributed tracing. No raw telemetry payloads are logged by the new trace events.

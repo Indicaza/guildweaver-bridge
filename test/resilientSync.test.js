@@ -115,3 +115,32 @@ test("a rejected device stops the sync without acknowledging anything", async ()
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("scoped synchronization preserves unrelated queues and the full pass delivers remaining domains", async () => {
+  const { directory, config, statePath } = setup();
+  const requests = [];
+  const fixture = source().replace(stream("character", "character-quill", "Quill", 4, "12abcdef"),
+    stream("auction_scan", "character-quill", "Quill", 4, "12abcdef"));
+  fs.writeFileSync(config.savedVariablesPath, fixture);
+  const options = {
+    log: () => {},
+    fetchImpl: async (_url, options) => {
+      requests.push(JSON.parse(options.body).envelope.eventType);
+      return json({ status: "created" });
+    },
+  };
+  try {
+    const first = await syncOnce(config, { ...options, domains: ["character"], manual: true });
+    assert.equal(first.telemetrySent, 1);
+    assert.deepEqual(requests, ["character"]);
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(statePath)).sentTelemetryRevisions).length, 1);
+    const second = await syncOnce(config, { ...options, domains: ["ah"], manual: true });
+    assert.equal(second.telemetrySent, 1);
+    assert.deepEqual(requests, ["character", "auction_scan"]);
+    assert.equal(Object.keys(JSON.parse(fs.readFileSync(statePath)).sentTelemetryRevisions).length, 2);
+    const third = await syncOnce(config, options);
+    assert.equal(third.telemetrySent, 0);
+    assert.equal(third.telemetrySkipped, 2);
+    await assert.rejects(syncOnce(config, { ...options, domains: ["typo"] }), /Unknown sync domain/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
