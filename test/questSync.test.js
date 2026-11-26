@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { bridgeInboxSource } from "../src/bridgeInbox.js";
-import { syncOnce } from "../src/sync.js";
+import { fixtureSyncOnce as syncOnce } from "../testSupport/telemetryReceipt.js";
 
 function questSavedVariables() {
   return `GuildweaverDB = {
