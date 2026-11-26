@@ -1,24 +1,21 @@
-const LABELS = {
-  current: "Up to date",
-  "package-current": "Up to date",
-  "developer-current": "Up to date",
-  updated: "Updated",
-  "developer-updated": "Updated",
-  "restart-scheduled": "Update ready · restarting automatically",
-  "release-unavailable": "Release unavailable · check again later",
-  "not-packaged": "Automatic update unavailable",
-  "package-not-installed": "Not installed as a managed package",
-  dirty: "Skipped · local changes",
-  "developer-dirty": "Skipped · local changes",
-  branch: "Skipped · non-main branch",
-  "developer-branch": "Skipped · non-main branch",
-  failed: "Update failed",
+const STATUSES = {
+  current: ["Up to date", "success"],
+  "package-current": ["Up to date", "success"],
+  "developer-current": ["Up to date", "success"],
+  updated: ["Updated", "success"],
+  "developer-updated": ["Updated", "success"],
+  "restart-scheduled": ["Restarting", "info"],
+  "release-unavailable": ["Unavailable", "warning", "Release unavailable. Check again later."],
+  "not-packaged": ["Unavailable", "warning", "Automatic updates are unavailable for this installation."],
+  "package-not-installed": ["Unavailable", "warning", "Bridge is not installed as a managed package."],
+  dirty: ["Skipped", "warning", "Local changes preserved."],
+  "developer-dirty": ["Skipped", "warning", "Local changes preserved."],
+  branch: ["Skipped", "warning", "Non-main branch preserved."],
+  "developer-branch": ["Skipped", "warning", "Non-main branch preserved."],
+  failed: ["Failed", "error"],
 };
 
 export function describeUpdate(result) {
-  const label = LABELS[result?.status] || "Update status unavailable";
-  const version = result?.releaseVersion || (result?.commit ? String(result.commit).slice(0, 8) : "");
-  const tone = ["current", "package-current", "developer-current", "updated", "developer-updated"].includes(result?.status) ? "success"
-    : result?.status === "failed" ? "error" : result?.status === "restart-scheduled" ? "info" : "warning";
-  return { label: version ? label + " · " + version : label, tone };
+  const [label, tone, detail] = STATUSES[result?.status] || ["Unavailable", "warning", "Update status unavailable."];
+  return { label, tone, ...(detail ? { detail } : {}) };
 }
