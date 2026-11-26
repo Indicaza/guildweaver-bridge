@@ -228,15 +228,15 @@ async function main() {
     releaseInstanceLock = null;
   };
 
-  const checkBridgeUpdate = async () => {
+  const checkBridgeUpdate = async (progress = () => {}) => {
     if (!backgroundMode && !manualInFlight) return null;
 
     try {
-      const sourceResult = updateBridgeSource();
+      const sourceResult = updateBridgeSource({ progress });
       if (sourceResult.status !== "not-source-checkout") {
         return sourceResult;
       }
-      return await ensurePackagedBridgeCurrent(config);
+      return await ensurePackagedBridgeCurrent(config, { progress });
     } catch (error) {
       if (manualInFlight) throw error;
       console.error(`Guildweaver Bridge self-update: ${error.message}`);
@@ -482,7 +482,7 @@ async function main() {
       }
     }, WOW_PROCESS_POLL_INTERVAL_MS);
 
-    void startAgent(config, async (operation, args) => {
+    void startAgent(config, async (operation, args, progress) => {
       if (operation === "ping" && Array.isArray(args) && args.length === 0) return { ready: !stopping };
       if (stopping || manualInFlight || syncInFlight || addonUpdateInFlight || bridgeUpdatePromise) throw new Error("Bridge busy; retry in a moment.");
       if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) throw new Error("Invalid command arguments");
@@ -498,14 +498,20 @@ async function main() {
         if (operation === "update") {
           if (args.length !== 1 || !["all", "addon", "bridge"].includes(args[0])) throw new Error("Choose addon, bridge or all");
           const result = {};
+          const emit = (component, event) => progress({ component, ...event });
           if (args[0] !== "bridge") {
-            result.addon = await ensureAddonCurrent(config);
+            emit("addon", { stage: "checking" });
+            result.addon = await ensureAddonCurrent(config, { progress: event => emit("addon", event) });
             if (["updated", "developer-updated"].includes(result.addon?.status)) {
-              await announce("Guildweaver addon updated", (result.addon.releaseVersion || result.addon.commit?.slice(0, 8) || "New build") + " installed. Reload WoW to load it.");
+              result.addon.action = isWowRunning() ? "reload" : "next-launch";
+              emit("addon", { stage: "result", status: result.addon.status, releaseVersion: result.addon.releaseVersion, commit: result.addon.commit, action: result.addon.action });
+              await announce("Guildweaver addon updated", (result.addon.releaseVersion || result.addon.commit?.slice(0, 8) || "New build") + (result.addon.action === "reload" ? " installed. Type /reload in WoW." : " installed. Ready for your next WoW launch."));
             }
           }
+          if (result.addon && !result.addon.action) emit("addon", { stage: "result", status: result.addon.status, releaseVersion: result.addon.releaseVersion, commit: result.addon.commit });
           if (args[0] !== "addon") {
-            result.bridge = await checkBridgeUpdate();
+            emit("bridge", { stage: "checking" });
+            result.bridge = await checkBridgeUpdate(event => emit("bridge", event));
             if (["updated", "package-update-staged"].includes(result.bridge?.status)) {
               stopping = true;
               clearWatchTimers();
@@ -515,8 +521,10 @@ async function main() {
                 catch (error) { console.error("Bridge restart failed: " + error.message); releaseLock(); resolve(); }
               }, 250);
               result.bridge = { status: "restart-scheduled", commit: replacement.commit, releaseVersion: replacement.releaseVersion };
+              emit("bridge", { stage: "restarting" });
             }
           }
+          if (result.bridge) emit("bridge", { stage: "result", status: result.bridge.status, releaseVersion: result.bridge.releaseVersion, commit: result.bridge.commit });
           return result;
         }
         throw new Error("Unknown agent operation");
