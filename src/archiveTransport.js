@@ -87,6 +87,7 @@ export async function queuedArchivePage(config, credentials, query, {
         await wait(ms);
         continue;
       }
+      if (response.status === 409 && data?.error === "archive_hold_changed") throw new Error("Archive hold changed. Preserve this directory; start a new transfer under a new hold.");
       if (!response.ok) throw new Error("Archive request failed (HTTP " + response.status + "). Check device authorization and dataset.");
       if (!data || typeof data.ticket !== "string" || !/^[a-f0-9-]{36}$/i.test(data.ticket)
           || (ticket && data.ticket !== ticket)) throw new Error("Invalid archive ticket response");
