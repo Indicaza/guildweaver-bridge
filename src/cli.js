@@ -480,6 +480,7 @@ async function main() {
     }, WOW_PROCESS_POLL_INTERVAL_MS);
 
     void startAgent(config, async (operation, args) => {
+      if (operation === "ping" && Array.isArray(args) && args.length === 0) return { ready: !stopping };
       if (stopping || manualInFlight || syncInFlight || addonUpdateInFlight || bridgeUpdatePromise) throw new Error("Bridge busy; retry in a moment.");
       if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) throw new Error("Invalid command arguments");
       manualInFlight = true;

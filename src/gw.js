@@ -13,6 +13,7 @@ import { showLogs, debugEnabled, setDebug } from "./cli/logs.js";
 import { installCli } from "./cli/install.js";
 import { requestAgent } from "./agent.js";
 import { normalizeDomains } from "./domains.js";
+import { diagnose } from "./doctor.js";
 import { notify, notificationsEnabled, setNotifications } from "./notifications.js";
 
 function parseArgs(args) {
@@ -52,6 +53,17 @@ async function main() {
       rows([["Bridge", status.running ? green("Running") : warn("Stopped")], ["Device", data.device || (data.paired ? "Paired" : "Not paired")], ["Channel", data.channel], ["Version", data.version]]);
       console.log("\n" + muted("gw help · gw logs · gw archive status"));
     }
+    return;
+  }
+  if (command === "doctor" || (command === "dev" && rest[0] === "report")) {
+    const report = await loading("Checking Guildweaver…", () => diagnose(config), { json });
+    if (json || command === "dev") console.log(JSON.stringify(report, null, 2));
+    else {
+      heading("System diagnostics");
+      rows(report.checks.map((check) => [check.name, (check.status === "pass" ? green("✓") : check.status === "fail" ? red("✖") : check.status === "warn" ? warn("!") : muted("·")) + " " + check.detail]));
+      console.log(muted("gw doctor --json produces a shareable diagnostic report without credentials, character names or file paths."));
+    }
+    if (report.checks.some((check) => check.status === "fail")) process.exitCode = 1;
     return;
   }
   if (command === "sync") {
