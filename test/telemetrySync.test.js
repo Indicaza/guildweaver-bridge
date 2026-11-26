@@ -256,7 +256,10 @@ test("explains unconfirmed release without log spam and accepts a corrected save
     fs.writeFileSync(config.savedVariablesPath, rejected);
     assert.equal((await syncOnce(config, options)).telemetrySent, 0);
     time += 1000;
-    assert.equal((await syncOnce(config, options)).skippedFiles, 1);
+    const blocked = await syncOnce(config, options);
+    assert.equal(blocked.skippedFiles, 1);
+    assert.equal(blocked.blockedFiles, 1);
+    assert.equal(blocked.unreadableFiles, 0);
     assert.equal(logs.filter((line) => line.includes("test_build")).length, 1);
     assert.match(logs.join("\n"), /run \/gw version/);
     time += 60_000;
@@ -334,4 +337,20 @@ test("quest snapshot failure does not discard successful telemetry or reject the
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+
+test("gateway HTML does not flood the telemetry log or acknowledge a record", async () => {
+  const { directory, config } = setup();
+  const logs = [];
+  try {
+    const result = await syncOnce(config, {
+      fetchImpl: async () => new Response("<html><body>Bad Gateway\n<script>raw markup</script></body></html>", { status: 502 }),
+      log: (line) => logs.push(line),
+    });
+    assert.equal(result.telemetrySent, 0);
+    assert.equal(result.telemetryFailed, 1);
+    assert.match(logs.join("\n"), /HTTP 502/);
+    assert.doesNotMatch(logs.join("\n"), /<html>|<script>/);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
