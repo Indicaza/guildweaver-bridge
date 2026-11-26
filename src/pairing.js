@@ -53,7 +53,7 @@ function ownerPath(config) {
 
 function accountOwner(config, credentials) {
   const memberId = credentials?.memberId;
-  const holdfastUrl = String(credentials?.holdfastUrl || "").replace(/\\/+$/, "");
+  const holdfastUrl = String(credentials?.holdfastUrl || "").replace(/\/+$/, "");
   if (typeof memberId !== "string" || !memberId.trim() || !holdfastUrl || holdfastUrl !== config.holdfastUrl) {
     throw new Error("Guildweaver pairing lacks a verified account or matches a different website. Sync blocked to protect local data.");
   }
