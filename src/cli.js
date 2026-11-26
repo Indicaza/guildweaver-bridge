@@ -294,10 +294,12 @@ async function main() {
   let syncInFlight = false;
   let reconcileRequested = true;
   let lastStateReconcileAt = 0;
+  let consecutiveFailures = 0;
+  let retryAt = 0;
 
   const run = async ({ reconcileState = false } = {}) => {
     if (reconcileState) reconcileRequested = true;
-    if (syncInFlight) return false;
+    if (syncInFlight || Date.now() < retryAt) return false;
 
     syncInFlight = true;
     const shouldReconcile = reconcileRequested;
@@ -306,19 +308,28 @@ async function main() {
     try {
       const result = await syncWithRepair({ reconcileState: shouldReconcile });
       if (shouldReconcile) lastStateReconcileAt = Date.now();
+      if (result.transientUploadFailure || result.questSyncFailed || result.lootSync === "failed") {
+        consecutiveFailures += 1;
+        retryAt = Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(consecutiveFailures - 1, 5));
+      } else {
+        consecutiveFailures = 0;
+        retryAt = 0;
+      }
 
       if (
-        result.telemetrySent > 0 ||
+        result.telemetrySent > 0 || result.telemetryFailed > 0 || result.questSyncFailed ||
         shouldReconcile ||
         command === "once"
       ) {
         console.log(
-          `Scan complete: ${result.files} file(s), ${result.telemetrySent} telemetry record(s), ${result.telemetrySkipped} skipped${shouldReconcile ? ", state reconciled" : ""}.`,
+          `Scan complete: ${result.files} file(s), ${result.telemetrySent} telemetry record(s), ${result.telemetrySkipped} skipped, ${result.telemetryDeferred} deferred, ${result.telemetryFailed} failed, ${result.telemetryRejected} rejected, ${result.skippedFiles} unreadable file(s)${shouldReconcile ? ", state reconciled" : ""}.`,
         );
       }
       return true;
     } catch (error) {
       if (shouldReconcile) reconcileRequested = true;
+      consecutiveFailures += 1;
+      retryAt = Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(consecutiveFailures - 1, 5));
       console.error(`Guildweaver Bridge: ${error.message}`);
 
       if (command === "once") {
