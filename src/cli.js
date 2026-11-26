@@ -516,6 +516,13 @@ async function main() {
           if (args[0] !== "addon") {
             emit("bridge", { stage: "checking" });
             result.bridge = await checkBridgeUpdate(event => emit("bridge", event));
+            if (["package-current", "developer-current", "current"].includes(result.bridge?.status)) {
+              try { installCli(config); }
+              catch (error) {
+                console.error("CLI launcher refresh failed: " + error.message);
+                result.bridge = { status: "failed", detail: "Could not refresh the CLI launcher. Check gw logs." };
+              }
+            }
             if (["updated", "package-update-staged"].includes(result.bridge?.status)) {
               stopping = true;
               clearWatchTimers();
