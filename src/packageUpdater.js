@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { stopLockedInstance } from "./instanceLock.js";
+import { downloadUpdate } from "./updateDownload.js";
 
 const RELEASE_DOWNLOAD_ROOT =
   "https://github.com/Indicaza/guildweaver-bridge/releases/download";
@@ -212,7 +213,7 @@ export function installPackagedBridge(config, { packageRoot = path.dirname(proce
 
 export async function ensurePackagedBridgeCurrent(
   config,
-  { fetchImpl = fetch, extractArchive = extractArchiveDefault } = {},
+  { fetchImpl = fetch, extractArchive = extractArchiveDefault, progress = () => {} } = {},
 ) {
   const runtime = packagedRuntime();
   if (!runtime) {
@@ -242,6 +243,7 @@ export async function ensurePackagedBridgeCurrent(
     };
   }
 
+  progress({ stage: "available", releaseVersion: manifest.releaseVersion, commit: manifest.commit });
   fs.mkdirSync(config.dataDirectory, { recursive: true });
   const downloadRoot = fs.mkdtempSync(path.join(config.dataDirectory, "bridge-download-"));
   const archivePath = path.join(downloadRoot, path.basename(new URL(assets.archive).pathname));
@@ -253,7 +255,8 @@ export async function ensurePackagedBridgeCurrent(
     if (!archiveResponse.ok) {
       throw new Error(`Unable to download Guildweaver Bridge: HTTP ${archiveResponse.status}`);
     }
-    fs.writeFileSync(archivePath, Buffer.from(await archiveResponse.arrayBuffer()));
+    await downloadUpdate(archiveResponse, archivePath, progress);
+    progress({ stage: "verifying" });
 
     const expectedChecksum = (await responseText(await fetchImpl(assets.checksum)))
       .trim()
@@ -264,12 +267,14 @@ export async function ensurePackagedBridgeCurrent(
       throw new Error("Guildweaver Bridge update checksum did not match");
     }
 
+    progress({ stage: "extracting" });
     fs.mkdirSync(extractionRoot, { recursive: true });
     extractArchive(archivePath, extractionRoot);
 
     const extractedPackage = path.join(extractionRoot, "GuildweaverBridge");
     validatePackageRoot(extractedPackage, manifest.commit);
 
+    progress({ stage: "staging" });
     fs.rmSync(nextPath, { recursive: true, force: true });
     fs.cpSync(extractedPackage, nextPath, { recursive: true });
     validatePackageRoot(nextPath, manifest.commit);
