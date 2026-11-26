@@ -8,12 +8,12 @@ import { archiveHttp, queuedArchivePage } from "./archiveTransport.js";
 const HELD_DATASETS = ["market-current", "market-hourly", "market-daily", "market-weekly", "market-monthly-all"];
 const DATASETS = new Set([...HELD_DATASETS, "market-monthly"]);
 const validHold = id => typeof id === "string" && /^[a-f0-9-]{36}$/i.test(id);
-const MAX_PAGE_BYTES = 512 * 1024;
+const MAX_PAGE_BYTES = 1280 * 1024;
 const MAX_PAGES_PER_RUN = 10_000;
 
 function parseOptions(args) {
   const options = {};
-  const allowed = new Set(["--dataset", "--market", "--out", "--dir", "--cursor", "--hold", "--config"]);
+  const allowed = new Set(["--dataset", "--market", "--out", "--dir", "--cursor", "--hold", "--mode", "--config"]);
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i], value = args[i + 1];
     if (!allowed.has(key) || Object.hasOwn(options, key) || !value || value.startsWith("--")) throw new Error("Invalid archive option: " + key);
@@ -25,7 +25,7 @@ function parseOptions(args) {
 function verifyBatch(result, { dataset, market, cursor, holdId }) {
   const batch = result?.batch;
   if (!batch || batch.schemaVersion !== 1 || batch.dataset !== dataset || batch.market !== market ||
-      batch.cursor !== cursor || (batch.holdId ?? null) !== (holdId ?? null) || !Array.isArray(batch.rows) || batch.rows.length > (holdId ? 1000 : 200) ||
+      batch.cursor !== cursor || (batch.holdId ?? null) !== (holdId ?? null) || !Array.isArray(batch.rows) || batch.rows.length > (holdId ? 4000 : 200) ||
       (batch.nextCursor !== null && (typeof batch.nextCursor !== "string" || !batch.nextCursor || batch.nextCursor.length > 2048 || batch.nextCursor === cursor || !batch.rows.length))) {
     throw new Error("Unexpected archive batch; nothing saved");
   }
@@ -125,15 +125,18 @@ export async function runArchiveCommand(config, args, { fetchImpl = fetch, log =
     return data;
   }
 
+  const mode = options["--mode"] || "safe";
+  if (!["safe", "bulk"].includes(mode)) throw new Error("Archive mode must be safe or bulk.");
   if (command === "pull-all") {
-    if (!options["--dir"] || Object.keys(options).some(key => !["--dir", "--config"].includes(key))) throw new Error("Use archive pull-all --dir DIRECTORY");
+    if (!options["--dir"] || Object.keys(options).some(key => !["--dir", "--mode", "--config"].includes(key))) throw new Error("Use archive pull-all --dir DIRECTORY");
     const directory = path.resolve(options["--dir"]);
     const status = await readTransferStatus(config, credentials, { fetchImpl, signal });
+    if (mode === "bulk" && status.bulkProtocol !== 1) throw new Error("Website does not support bulk archive pages yet. Use --mode safe.");
     const plan = openTransfer(directory, config.holdfastUrl, status);
     for (const [index, entry] of plan.entries.entries()) {
       signal?.throwIfAborted();
       progress({ stage: "dataset", index: index + 1, total: plan.entries.length, dataset: entry.dataset, market: entry.market });
-      const report = await runArchiveCommand(config, ["pull", "--dataset", entry.dataset, "--market", entry.market, "--hold", plan.holdId, "--dir", path.join(directory, entry.directory)], {
+      const report = await runArchiveCommand(config, ["pull", "--dataset", entry.dataset, "--market", entry.market, "--hold", plan.holdId, "--mode", mode, "--dir", path.join(directory, entry.directory)], {
         fetchImpl, signal, sleepImpl, now, random, progress, log: () => {},
       });
       if (!report.complete) {
@@ -153,7 +156,9 @@ export async function runArchiveCommand(config, args, { fetchImpl = fetch, log =
   const cursor = options["--cursor"] ?? null;
   const holdId = options["--hold"];
   if ((holdId && !validHold(holdId)) || (HELD_DATASETS.includes(dataset) && dataset !== "market-current" && !holdId)) throw new Error("Start an archive hold and specify its ID with --hold.");
+  if (mode === "bulk" && !holdId) throw new Error("Bulk mode requires an active archive hold.");
   const held = holdId ? { holdId } : {};
+  const pageMode = mode === "bulk" ? { bulk: true } : {};
   if (!DATASETS.has(dataset) || !market || market.length > 256 || Boolean(output) === Boolean(dir) ||
       (output && !output.endsWith(".json.gz")) || (dir && cursor !== null)) {
     throw new Error("Specify a supported --dataset, --market and explicit --out FILE.json.gz or --dir DIRECTORY (no --cursor with --dir)");
@@ -164,7 +169,7 @@ export async function runArchiveCommand(config, args, { fetchImpl = fetch, log =
     const destination = path.resolve(output);
     if (fs.existsSync(destination)) throw new Error("Archive file already exists: " + destination);
     if (!fs.statSync(path.dirname(destination)).isDirectory()) throw new Error("Output directory must already exist");
-    const { result, release } = await queuedArchivePage(config, credentials, { dataset, market, ...held, ...(cursor === null ? {} : { cursor }) }, transportOptions);
+    const { result, release } = await queuedArchivePage(config, credentials, { dataset, market, ...held, ...pageMode, ...(cursor === null ? {} : { cursor }) }, transportOptions);
     try {
       const batch = verifyBatch(result, { dataset, market, cursor, ...held });
       progress({ stage: "verified" });
@@ -184,7 +189,7 @@ export async function runArchiveCommand(config, args, { fetchImpl = fetch, log =
     signal?.throwIfAborted();
     const page = state.pages + 1;
     const { result, release } = await queuedArchivePage(config, credentials, {
-      dataset, market, ...held, ...(state.cursor === null ? {} : { cursor: state.cursor }),
+      dataset, market, ...held, ...pageMode, ...(state.cursor === null ? {} : { cursor: state.cursor }),
     }, { ...transportOptions, progress: event => progress({ ...event, page, pages: state.pages, rows: state.rows, bytes: state.bytes }) });
     try {
       const batch = verifyBatch(result, { dataset, market, cursor: state.cursor, ...held });

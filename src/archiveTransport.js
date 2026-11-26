@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const TRANSIENT = new Set([408, 429, 500, 502, 503, 504]);
 
-async function bodyJson(response) {
+async function bodyJson(response, maxBytes = MAX_RESPONSE_BYTES) {
   if (!response.body) return null;
   const reader = response.body.getReader();
   const chunks = [];
@@ -13,7 +13,7 @@ async function bodyJson(response) {
       const { value, done } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > MAX_RESPONSE_BYTES) {
+      if (bytes > maxBytes) {
         await reader.cancel();
         throw new Error("Archive response exceeded its size limit");
       }
@@ -33,7 +33,7 @@ export function retryDelay(response, fallbackSeconds = 3, random = Math.random) 
   return Math.ceil(base * 1000 + random() * 1500);
 }
 
-export async function archiveHttp(config, credentials, route, { fetchImpl = fetch, method = "GET", body, signal, timeout = 15000 } = {}) {
+export async function archiveHttp(config, credentials, route, { fetchImpl = fetch, method = "GET", body, signal, timeout = 15000, bulk = false } = {}) {
   const headers = { Authorization: "Bearer " + credentials.deviceToken, Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetchImpl(config.holdfastUrl + "/api/bridge/archive/" + route, {
@@ -41,7 +41,7 @@ export async function archiveHttp(config, credentials, route, { fetchImpl = fetc
     redirect: "error",
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
   });
-  return { response, data: await bodyJson(response) };
+  return { response, data: await bodyJson(response, bulk ? 1280 * 1024 : MAX_RESPONSE_BYTES) };
 }
 
 export async function queuedArchivePage(config, credentials, query, {
@@ -59,7 +59,7 @@ export async function queuedArchivePage(config, credentials, query, {
       let answer;
       try {
         answer = await archiveHttp(config, credentials, ticket ? "jobs/" + encodeURIComponent(ticket) : "jobs", {
-          fetchImpl, signal, method: ticket ? "GET" : "POST",
+          fetchImpl, signal, bulk: query.bulk === true, method: ticket ? "GET" : "POST",
           ...(ticket ? {} : { body: query }),
         });
       } catch (error) {

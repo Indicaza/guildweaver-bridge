@@ -53,3 +53,42 @@ test("all market transfer resumes under the same hold and verifies every saved c
     await assert.rejects(runArchiveCommand({}, ["verify-all", "--dir", directory], { log: () => {} }), /no longer matches/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test("bulk mode resumes existing small pages and verifies mixed page sizes", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "gw-bulk-transfer-"));
+  try {
+    const credentialsPath = path.join(root, "credentials.json");
+    fs.writeFileSync(credentialsPath, JSON.stringify({ deviceToken: "test-token" }));
+    const directory = path.join(root, "transfer");
+    const config = { holdfastUrl: "https://example.test", credentialsPath };
+    const status = { enabled: true, hold: { id: holdId }, marketsTruncated: false, datasets, markets: [{ key: "market:a" }], bulkProtocol: 1 };
+    const queries = [];
+    const fetchImpl = async (url, options) => {
+      if (url.endsWith("/status")) return json(status);
+      if (options.method === "DELETE") return new Response(null, { status: 204 });
+      const query = JSON.parse(options.body);
+      queries.push(query);
+      const first = query.dataset === "market-current" && !query.cursor;
+      const rows = first ? [{ item_key: "i:0" }] : Array.from({ length: 1500 }, (_, i) => ({ item_key: "i:" + (i + 1), value: "x".repeat(380) }));
+      const batch = { schemaVersion: 1, dataset: query.dataset, market: query.market, holdId: query.holdId, cursor: query.cursor ?? null, nextCursor: first ? "next" : null, rows };
+      return json({ ticket, status: "ready", result: { batch, sha256: createHash("sha256").update(JSON.stringify(batch)).digest("hex") } });
+    };
+    const controller = new AbortController();
+    const args = ["pull-all", "--dir", directory];
+    await assert.rejects(runArchiveCommand(config, args, {
+      fetchImpl, log: () => {}, signal: controller.signal,
+      progress: event => { if (event.stage === "saved") controller.abort(new Error("interrupted")); },
+    }), /interrupted/);
+    assert.equal(queries[0].bulk, undefined);
+    status.bulkProtocol = 0;
+    await assert.rejects(runArchiveCommand(config, [...args, "--mode", "bulk"], { fetchImpl, log: () => {} }), /does not support bulk/);
+    status.bulkProtocol = 1;
+    const result = await runArchiveCommand(config, [...args, "--mode", "bulk"], { fetchImpl, log: () => {} });
+    assert.equal(queries[1].cursor, "next");
+    assert.ok(queries.slice(1).every(query => query.bulk === true));
+    assert.equal(result.complete, true);
+    assert.equal(result.rows, 7501);
+    assert.equal((await runArchiveCommand({}, ["verify-all", "--dir", directory], { log: () => {} })).complete, true);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
