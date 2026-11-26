@@ -77,12 +77,14 @@ function openArchiveDirectory(directory, dataset, market, holdfastUrl, holdId) {
 function scanArchive(directory, descriptor) {
   const files = fs.readdirSync(directory).filter(name => /^batch-\d{6}\.json\.gz$/.test(name)).sort();
   let cursor = null, rows = 0, bytes = 0, complete = false;
+  const chain = createHash("sha256");
   const cursors = new Set();
   for (const [index, name] of files.entries()) {
     if (complete || name !== batchName(index + 1)) throw new Error("Archive batch chain has an unexpected gap or trailing page: " + name);
     const file = path.join(directory, name);
     const result = readPage(file);
     const batch = verifyBatch(result, { ...descriptor, cursor });
+    chain.update(result.sha256 + "\n");
     if (batch.nextCursor !== null && cursors.has(batch.nextCursor)) throw new Error("Archive cursor cycle");
     cursors.add(batch.nextCursor);
     cursor = batch.nextCursor;
@@ -90,7 +92,7 @@ function scanArchive(directory, descriptor) {
     rows += batch.rows.length;
     bytes += fs.statSync(file).size;
   }
-  return { pages: files.length, cursor, rows, bytes, complete, cursors };
+  return { pages: files.length, cursor, rows, bytes, complete, cursors, chainSha256: chain.digest("hex") };
 }
 
 export async function runArchiveCommand(config, args, { fetchImpl = fetch, log = console.log, progress = () => {}, signal, sleepImpl, now, random } = {}) {
@@ -142,7 +144,7 @@ export async function runArchiveCommand(config, args, { fetchImpl = fetch, log =
     }
     const final = await readTransferStatus(config, credentials, { fetchImpl, signal });
     if (JSON.stringify(transferPlan(config.holdfastUrl, final)) !== JSON.stringify(plan)) throw new Error("Archive hold or market list changed; transfer cannot be certified.");
-    const report = verifyTransfer(directory);
+    const report = verifyTransfer(directory, { finalize: true });
     log(JSON.stringify(report, null, 2));
     return report;
   }
@@ -236,7 +238,7 @@ function openTransfer(directory, website, status) {
   return plan;
 }
 
-function verifyTransfer(directory) {
+function verifyTransfer(directory, { finalize = false } = {}) {
   const plan = JSON.parse(fs.readFileSync(path.join(directory, "transfer.json"), "utf8"));
   if (plan.schemaVersion !== 1 || typeof plan.website !== "string" || !validHold(plan.holdId) || !Array.isArray(plan.entries)) throw new Error("Invalid transfer plan");
   const markets = [...new Set(plan.entries.map(entry => entry.market))].map(key => ({ key }));
@@ -244,6 +246,7 @@ function verifyTransfer(directory) {
   if (JSON.stringify(expected) !== JSON.stringify(plan)) throw new Error("Invalid transfer plan entries");
   let complete = 0, pages = 0, rows = 0, bytes = 0;
   const pending = [];
+  const chains = [];
   for (const entry of plan.entries) {
     const sub = path.join(directory, entry.directory);
     const file = path.join(sub, "archive.json");
@@ -252,7 +255,12 @@ function verifyTransfer(directory) {
     if (descriptor.schemaVersion !== 1 || descriptor.website !== plan.website || descriptor.holdId !== plan.holdId || descriptor.dataset !== entry.dataset || descriptor.market !== entry.market) throw new Error("Archive descriptor does not match transfer plan: " + entry.directory);
     const report = scanArchive(sub, descriptor);
     pages += report.pages; rows += report.rows; bytes += report.bytes;
-    if (report.complete) complete++; else pending.push(entry.directory);
+    if (report.complete) { complete++; chains.push({ directory: entry.directory, pages: report.pages, rows: report.rows, chainSha256: report.chainSha256 }); } else pending.push(entry.directory);
   }
-  return { directory, holdId: plan.holdId, datasetsComplete: complete, datasetsTotal: plan.entries.length, pages, rows, bytes, complete: pending.length === 0, pending };
+  const receiptFile = path.join(directory, "verified.json");
+  const receipt = { schemaVersion: 1, planSha256: createHash("sha256").update(JSON.stringify(plan)).digest("hex"), chains };
+  if (finalize && pending.length === 0 && !fs.existsSync(receiptFile)) writeNewFile(receiptFile, Buffer.from(JSON.stringify(receipt, null, 2)));
+  const certified = fs.existsSync(receiptFile);
+  if (certified && (pending.length || JSON.stringify(JSON.parse(fs.readFileSync(receiptFile, "utf8"))) !== JSON.stringify(receipt))) throw new Error("Local archive no longer matches its verified transfer receipt.");
+  return { directory, holdId: plan.holdId, datasetsComplete: complete, datasetsTotal: plan.entries.length, pages, rows, bytes, complete: pending.length === 0 && certified, pending, receipt: certified ? receiptFile : null };
 }
