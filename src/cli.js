@@ -204,6 +204,7 @@ async function main() {
 
   let releaseInstanceLock = null;
   let manualInFlight = false;
+  let bridgeUpdatePromise = null;
   let closeAgent = null;
   const updateMarker = config.lockPath + ".update.json";
   const announce = async (title, message) => {
@@ -276,7 +277,7 @@ async function main() {
 
   let addonUpdateInFlight = false;
   const updateAddon = async () => {
-    if (addonUpdateInFlight || manualInFlight) return;
+    if (addonUpdateInFlight || manualInFlight || bridgeUpdatePromise) return;
     addonUpdateInFlight = true;
 
     try {
@@ -343,7 +344,7 @@ async function main() {
 
   const run = async ({ reconcileState = false } = {}) => {
     if (reconcileState) reconcileRequested = true;
-    if (syncInFlight || manualInFlight || Date.now() < retryAt) return false;
+    if (syncInFlight || manualInFlight || bridgeUpdatePromise || Date.now() < retryAt) return false;
 
     syncInFlight = true;
     const shouldReconcile = reconcileRequested;
@@ -406,9 +407,12 @@ async function main() {
     `Watching Guildweaver SavedVariables every ${config.pollIntervalMs}ms; reconciling current state every ${Math.round(config.stateReconcileIntervalMs / 60000)}m.`,
   );
 
+  let runningCommit = packagedRuntime()?.release?.commit || null;
+  if (!runningCommit) {
+    try { runningCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); } catch {}
+  }
   await new Promise((resolve) => {
     let stopping = false;
-    let bridgeUpdatePromise = null;
     let wowWasRunning = isWowRunning();
     let bridgeUpdateTimer = null;
     let wowProcessTimer = null;
@@ -483,7 +487,7 @@ async function main() {
     }, WOW_PROCESS_POLL_INTERVAL_MS);
 
     void startAgent(config, async (operation, args, progress) => {
-      if (operation === "ping" && Array.isArray(args) && args.length === 0) return { ready: !stopping };
+      if (operation === "ping" && Array.isArray(args) && args.length === 0) return { ready: !stopping, commit: runningCommit, pid: process.pid };
       if (stopping || manualInFlight || syncInFlight || addonUpdateInFlight || bridgeUpdatePromise) throw new Error("Bridge busy; retry in a moment.");
       if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) throw new Error("Invalid command arguments");
       manualInFlight = true;
@@ -520,7 +524,7 @@ async function main() {
                 try { restartIntoUpdatedBridge(replacement); resolve(); }
                 catch (error) { console.error("Bridge restart failed: " + error.message); releaseLock(); resolve(); }
               }, 250);
-              result.bridge = { status: "restart-scheduled", commit: replacement.commit, releaseVersion: replacement.releaseVersion };
+              result.bridge = { status: "restart-scheduled", commit: replacement.commit, releaseVersion: replacement.releaseVersion, previousPid: process.pid };
               emit("bridge", { stage: "restarting" });
             }
           }
