@@ -37,7 +37,7 @@ export function updateAction(result) {
 export function createUpdateProgress(target, { stream = process.stdout, json = false } = {}) {
   const components = target === "all" ? ["addon", "bridge"] : [target];
   const states = Object.fromEntries(components.map(key => [key, { label: "Waiting to check", tone: "info" }]));
-  let activity = "Checking for updates…", active = false, rendered = false, finished = false;
+  let activity = "Checking for updates…", rendered = false, finished = false;
   const tty = stream.isTTY && (stream.columns || 80) >= 64;
   const decorated = state => {
     const label = (state.tone === "success" ? "✓ " : state.tone === "error" ? "✖ " : state.tone === "warning" ? "! " : "↻ ") + state.label;
@@ -75,7 +75,6 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       }
       const description = updateActivity(event);
       if (!description) return;
-      active = true;
       if (event.stage === "checking") set(key, { label: "Checking…", tone: "info" });
       else if (event.stage === "available") set(key, { label: "Updating now" + (version(event) ? " · " + version(event) : ""), tone: "info" });
       activity = names[key] + " · " + description;
@@ -86,7 +85,7 @@ export function createUpdateProgress(target, { stream = process.stdout, json = f
       if (json || finished) return;
       finished = true;
       for (const key of components) set(key, describeUpdate(result[key]));
-      activity = result.bridge?.status === "restart-scheduled" ? "Restarting automatically · no action needed." : active ? "Update check complete." : "Update check complete.";
+      activity = result.bridge?.status === "restart-scheduled" ? "Restarting automatically · no action needed." : "Update check complete.";
       if (tty) draw();
       else for (const key of components) stream.write("  " + names[key] + "  " + decorated(states[key]) + "\n");
       const action = updateAction(result.addon);
