@@ -5,6 +5,7 @@ import path from "node:path";
 import { writeBridgeInbox, writeTelemetryAcks } from "./bridgeInbox.js";
 import { findSavedVariablesFiles } from "./discovery.js";
 import { emptyLootState, readLootState, syncLoot } from "./lootSync.js";
+import { normalizeDomains, includesEvent } from "./domains.js";
 import {
   assertSupportedSavedVariablesSchema,
   outboundTelemetry,
@@ -274,8 +275,13 @@ export async function syncOnce(
     fileCache = settledFiles,
     maxUploadAttempts = MAX_UPLOAD_ATTEMPTS,
     uploadBudgetMs = UPLOAD_BUDGET_MS,
+    domains: requestedDomains = [],
+    manual = false,
   } = {},
 ) {
+  const domains = normalizeDomains(requestedDomains);
+  const questsEnabled = !domains || domains.has("quests");
+  const wishlistEnabled = !domains || domains.has("wishlist");
   const files = findSavedVariablesFiles(config);
   const state = readState(config.statePath);
   let stateDirty = false;
@@ -323,7 +329,7 @@ export async function syncOnce(
       }
 
       const settled = fileCache.get(cacheKey);
-      if (!reconcileState && signature && settled?.signature === signature) {
+      if (!domains && !manual && !reconcileState && signature && settled?.signature === signature) {
         unchangedFiles += 1;
         telemetryDiscovered += settled.telemetryCount;
         telemetrySkipped += settled.telemetryCount;
@@ -331,7 +337,7 @@ export async function syncOnce(
         for (const [streamKey, fingerprint] of settled.telemetryAcks || []) acknowledge(streamKey, fingerprint);
         continue;
       }
-      fileCache.delete(cacheKey);
+      if (!domains) fileCache.delete(cacheKey);
 
       let database;
       let fileOutstanding = false;
@@ -375,8 +381,9 @@ export async function syncOnce(
       const currentTelemetryKeys = new Set();
 
       for (const [streamKey, rawRecord] of Object.entries(outboundTelemetry(database))) {
-        telemetryDiscovered += 1;
         currentTelemetryKeys.add(`${telemetryPrefix}${streamKey.trim()}`);
+        if (!includesEvent(domains, rawRecord?.envelope?.eventType)) continue;
+        telemetryDiscovered += 1;
         let record;
 
         try {
@@ -511,7 +518,7 @@ export async function syncOnce(
 
       // Streams the addon has dropped (pruned events, removed characters) no
       // longer need dedupe bookkeeping; without this the state file only grows.
-      for (const store of [
+      if (!domains) for (const store of [
         state.sentTelemetryRevisions,
         state.sentTelemetryFingerprints,
         state.rejectedTelemetry,
@@ -524,7 +531,7 @@ export async function syncOnce(
         }
       }
 
-      for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
+      if (questsEnabled) for (const [actionId, action] of Object.entries(outboundQuestActions(database))) {
         currentQuestActionIds.add(actionId);
         fileQuestActionIds.push(actionId);
         if (state.questActions[actionId]) continue;
@@ -543,7 +550,7 @@ export async function syncOnce(
       }
 
       flushState();
-      if (signature && !fileOutstanding) {
+      if (!domains && signature && !fileOutstanding) {
         settledThisPass.set(cacheKey, {
           signature,
           questActionIds: fileQuestActionIds,
@@ -591,7 +598,7 @@ export async function syncOnce(
     writeState(config.statePath, state);
   }
 
-  for (const actionId of Object.keys(state.questActions)) {
+  if (!domains) for (const actionId of Object.keys(state.questActions)) {
     if (!currentQuestActionIds.has(actionId)) {
       delete state.questActions[actionId];
       stateDirty = true;
@@ -617,7 +624,9 @@ export async function syncOnce(
         .slice(0, 16)
     : "";
 
-  if (ackDigest !== state.telemetryAckDigest) {
+  // A scoped pass must not replace the complete acknowledgement mailbox.
+  // Its persisted revisions are picked up and acknowledged by the next full pass.
+  if (!domains && ackDigest !== state.telemetryAckDigest) {
     try {
       writeTelemetryAcks(config, acknowledged, ackDigest);
       state.telemetryAckDigest = ackDigest;
@@ -632,8 +641,9 @@ export async function syncOnce(
   // Run before the quest snapshot and never allowed to throw, so neither
   // can hold the other up.
   let loot = { status: "skipped" };
-  try {
+  if (wishlistEnabled) try {
     const before = JSON.stringify(state.loot);
+    if (manual) state.loot.lastSyncAt = 0;
     loot = await syncLoot(config, state.loot, { fetchImpl, log, now });
     if (JSON.stringify(state.loot) !== before) {
       stateDirty = true;
@@ -650,7 +660,7 @@ export async function syncOnce(
     timestamp - state.lastQuestSyncAt >= config.questSyncIntervalMs;
   let questSnapshotUpdated = false;
 
-  if (questSyncDue) {
+  if (questsEnabled && (manual || questSyncDue)) {
     try {
     const snapshot = await getQuestSnapshot(config, fetchImpl);
     const acknowledgedQuestActions = [...currentQuestActionIds].filter(
@@ -697,5 +707,6 @@ export async function syncOnce(
     transientUploadFailure,
     lootSync: loot.status,
     reconciledState: Boolean(reconcileState),
+    domains: domains ? [...domains] : ["all"],
   };
 }
