@@ -217,6 +217,13 @@ async function postTelemetry(config, record, fetchImpl) {
     throw new TelemetryRejectedError(response.status, detail);
   }
 
+  if (!body || !["created", "duplicate"].includes(body.status)
+      || !Number.isSafeInteger(body.recordId) || body.recordId <= 0
+      || body.streamKey !== record.streamKey || body.revision !== record.revision
+      || body.receiptKey !== telemetryIdempotencyKey(record)) {
+    throw new Error("Unverified telemetry receipt; record remains queued");
+  }
+
   return body;
 }
 
@@ -471,7 +478,7 @@ export async function syncOnce(
         try {
           const result = await postTelemetry(config, record, fetchImpl);
           consecutiveUploadFailures = 0;
-          emit("http_success", "DEBUG", "Telemetry endpoint returned success", { elapsedMs: now() - startedAt, recordId: result?.recordId ?? null });
+          emit("receipt_verified", "DEBUG", "Verified persisted telemetry receipt", { elapsedMs: now() - startedAt, recordId: result?.recordId ?? null });
           state.sentTelemetryRevisions[key] = record.revision;
           if (record.fingerprint) {
             state.sentTelemetryFingerprints[key] = record.fingerprint;

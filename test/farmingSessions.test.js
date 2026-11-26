@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { normalizeTelemetryRecord, telemetryIdempotencyKey } from '../src/telemetry.js';
-import { syncOnce } from '../src/sync.js';
+import { fixtureSyncOnce as syncOnce } from "../testSupport/telemetryReceipt.js";
 
 const envelope = JSON.parse(fs.readFileSync(new URL('../fixtures/telemetry/farming_session.v1.json', import.meta.url), 'utf8'));
 function lua(value) {

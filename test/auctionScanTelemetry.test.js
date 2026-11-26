@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { normalizeTelemetryRecord, telemetryIdempotencyKey } from '../src/telemetry.js';
-import { syncOnce } from '../src/sync.js';
+import { fixtureSyncOnce as syncOnce } from "../testSupport/telemetryReceipt.js";
 
 // auction_scan travels like every other event: the bridge does not read
 // prices or markets, it moves the payload and keeps delivery idempotent.
