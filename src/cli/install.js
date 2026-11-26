@@ -40,6 +40,19 @@ export function prepareWindowsCliRuntime(directory, runtime) {
   return { node, entry };
 }
 
+export function installedWindowsRuntime(config) {
+  const packageRoot = config.installDirectory;
+  const applicationRoot = path.join(packageRoot, "app");
+  const nodePath = path.join(packageRoot, "node.exe");
+  const releasePath = path.join(applicationRoot, "release.json");
+  const release = JSON.parse(fs.readFileSync(releasePath, "utf8"));
+  if (release.schemaVersion !== 1 || !/^[a-f0-9]{40}$/i.test(release.commit || "") ||
+      !fs.existsSync(nodePath) || !fs.existsSync(path.join(applicationRoot, "src", "gw.js"))) {
+    throw new Error("Installed bridge package is incomplete");
+  }
+  return { packageRoot, applicationRoot, nodePath, releasePath, release };
+}
+
 export function installCli(config) {
   const directory = path.join(config.dataDirectory, "bin");
   fs.mkdirSync(directory, { recursive: true });
@@ -47,7 +60,7 @@ export function installCli(config) {
   let node = process.execPath;
   const windows = process.platform === "win32";
   const runtime = windows ? packagedRuntime() : null;
-  if (runtime) ({ entry, node } = prepareWindowsCliRuntime(directory, runtime));
+  if (runtime) ({ entry, node } = prepareWindowsCliRuntime(directory, installedWindowsRuntime(config)));
   const target = path.join(directory, windows ? "gw.cmd" : "gw");
   const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
   const configArgs = config.configPath ? (windows ? ' --config "' + config.configPath.replaceAll("%", "%%") + '"' : " --config " + quote(config.configPath)) : "";
