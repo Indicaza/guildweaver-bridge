@@ -32,6 +32,12 @@ export function redact(message) {
     .replace(/(Bearer\s+)[^\s"']+/gi, "$1[redacted]")
     .replace(/((?:deviceToken|authorization|token|secret)\s*[:=]\s*["']?)[^\s"',}]+/gi, "$1[redacted]");
 }
+function classifiedLevel(level, message) {
+  if (level !== "INFO") return level;
+  if (/\b(?:HTTP 5\d\d|remains queued:|will retry:|sync failed:|rejected \(HTTP|could not write)\b/i.test(message)) return "ERROR";
+  if (/Skipping Guildweaver SavedVariables|Ignored an invalid|Ignored a stale|ingestion paused/i.test(message)) return "WARN";
+  return level;
+}
 export function parseLog(line) {
   try {
     const value = JSON.parse(line);
@@ -44,7 +50,7 @@ export function parseLog(line) {
     const event = JSON.parse(match[3]);
     if (typeof event.traceId === "string" && typeof event.message === "string") return { ...event, time: match[1], domain: logDomain(event.domain), eventType: event.domain, message: redact(event.message) };
   } catch {}
-  return { time: match[1], level: match[2], domain: logDomain(match[3]), message: redact(match[3]) };
+  return { time: match[1], level: classifiedLevel(match[2], match[3]), domain: logDomain(match[3]), message: redact(match[3]) };
 }
 function readRange(file, offset, size) {
   const fd = fs.openSync(file, "r");
@@ -56,7 +62,7 @@ function readRange(file, offset, size) {
 export async function showLogs(config, { domain, level, follow, json, traceId, count = 50 } = {}) {
   if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("--lines must be 1–1000");
   const display = (line) => {
-    if (!line) return;
+    if (!line || !/^\[|^\{/.test(line)) return;
     const event = parseLog(line);
     if (traceId && event.traceId !== traceId) return;
     if (domain && domain !== "all" && domain !== event.domain && domain !== event.eventType) return;
@@ -76,7 +82,7 @@ export async function showLogs(config, { domain, level, follow, json, traceId, c
     const start = Math.max(0, offset - MAX_READ);
     const lines = readRange(config.logPath, start, offset - start).split("\n");
     if (start > 0) lines.shift();
-    lines.filter(Boolean).slice(-count).forEach(display);
+    lines.filter(line => /^\[|^\{/.test(line)).slice(-count).forEach(display);
   } else if (!json) console.log(muted("No bridge log yet."));
   while (follow) {
     await sleep(500);
