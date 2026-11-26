@@ -359,3 +359,13 @@ After the updated background bridge has started, `gw sync` requests a bounded fu
 `gw update [addon|bridge]` uses the existing verified update mechanisms. Bridge replacement reports restart-scheduled until the new process confirms its commit. The addon notification says installed and requests a WoW reload, not that the new code has loaded. `gw notify test`, `gw notify off`, and `gw notify on` control desktop notifications. macOS uses osascript, Linux notify-send, and Windows PowerShell/WinRT toasts; desktop notification delivery depends on permissions, desktop session and platform availability. Failure is logged, not fatal. The Windows application identity and packaged desktop notifications still need live verification.
 
 `gw dev on` enables structured per-upload debug events in the rotating bridge log, including correlation ID, revision, latency and HTTP outcome; `gw dev off` disables them. `gw dev logs ah` follows a domain, `gw dev trace ID` finds recorded local stages, and `--json` emits structured rows. This is local transport tracing, not yet full addon-to-database distributed tracing. No raw telemetry payloads are logged by the new trace events.
+
+### Queued archive exports (requires updated website)
+
+```powershell
+gw archive status
+gw archive pull --dataset market-monthly --market MARKET_KEY --dir D:\GuildweaverData\market-monthly
+gw archive verify --dir D:\GuildweaverData\market-monthly
+```
+
+The server admits one read-only worker at a time, returns queue tickets, and rejects excess demand with Retry-After. The CLI retries with jitter and a finite wait budget. It verifies each 200-row maximum page before publishing a new gzip file. Use the same command/directory to resume from verified cursor-chain files. Ctrl+C cancels a queued ticket when possible and leaves complete local pages alone. The destination filesystem must support hard links for atomic no-overwrite publication. An archive is a cursor traversal, not a consistent database snapshot; market-current may change between pages. No server data is deleted, no automatic archive is enabled, and only current summaries and finalized monthly history are available.
