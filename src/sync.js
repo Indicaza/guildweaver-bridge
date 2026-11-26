@@ -527,7 +527,7 @@ export async function syncOnce(
             transientUploadFailure = true;
             consecutiveUploadFailures += 1;
             stopUploads = consecutiveUploadFailures >= 3
-              || error.name === "TimeoutError" || error.name === "AbortError";
+              || error.name === "TimeoutError" || error.name === "AbortError" || error.name === "BridgeBackpressureError";
           }
           log(`Telemetry ${record.streamKey} remains queued: ${error.message}`);
         }
