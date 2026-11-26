@@ -14,6 +14,7 @@ import { installCli } from "./cli/install.js";
 import { requestAgent } from "./agent.js";
 import { normalizeDomains } from "./domains.js";
 import { diagnose } from "./doctor.js";
+import { createArchiveProgress } from "./cli/archiveProgress.js";
 import { notify, notificationsEnabled, setNotifications } from "./notifications.js";
 
 function parseArgs(args) {
@@ -75,7 +76,8 @@ async function main() {
       rows([["Files", String(result.files)], ["Uploaded", green(String(result.telemetrySent))], ["Skipped", String(result.telemetrySkipped)], ["Deferred", warn(String(result.telemetryDeferred))], ["Failed", result.telemetryFailed ? red(String(result.telemetryFailed)) : "0"], ["Rejected", String(result.telemetryRejected)], ["Unreadable files", String(result.skippedFiles)], ["Wishlist", result.lootSync], ["Quest inbox", result.questSyncFailed ? "Failed" : result.questSnapshotUpdated ? "Updated" : "Unchanged"]]);
       console.log(muted("WoW must save data with /reload or logout before it can be uploaded."));
     }
-    if (result.telemetryFailed || result.questSyncFailed || result.skippedFiles || result.lootSync === "failed") process.exitCode = 1;
+    if (!json && result.retryAfterSeconds) console.log(warn("Website busy · retry in " + result.retryAfterSeconds + "s · unsent data remains queued."));
+    if (result.telemetryFailed || result.questSyncFailed || result.skippedFiles || result.lootSync === "failed" || result.retryAfterSeconds) process.exitCode = 1;
     return;
   }
   if (command === "update") {
@@ -101,10 +103,20 @@ async function main() {
   if (command === "archive") {
     if (rest.length === 0) {
       heading("Archive");
-      rows([["gw archive status", "Check device authorization and markets"], ["gw archive pull", "Export an explicit dataset and destination"]]);
+      rows([["gw archive status", "Check device authorization and markets"], ["gw archive pull", "Export verified pages into an explicit file or directory"], ["gw archive verify", "Validate a local archive directory"]]);
       return;
     }
-    await runArchiveCommand(config, rest);
+    const renderer = createArchiveProgress({ json });
+    const controller = new AbortController();
+    const interrupt = () => controller.abort(new Error("Archive interrupted; verified pages are preserved"));
+    process.once("SIGINT", interrupt);
+    try {
+      const report = await runArchiveCommand(config, rest, { progress: renderer.show, signal: controller.signal });
+      if (report?.complete === false) process.exitCode = 1;
+    } finally {
+      renderer.finish();
+      process.removeListener("SIGINT", interrupt);
+    }
     return;
   }
   if (command === "dev" && ["on", "off", "status"].includes(rest[0]) && rest.length === 1) {

@@ -21,6 +21,7 @@ import {
   uninstallBackground as uninstallNativeBackground,
 } from "./background.js";
 import { createLiveServerCheck } from "./liveServer.js";
+import { createBackpressure } from "./backpressure.js";
 import { loadConfig } from "./config.js";
 import { acquireInstanceLock } from "./instanceLock.js";
 import {
@@ -313,12 +314,14 @@ async function main() {
     return;
   }
 
-  const checkLiveServer = createLiveServerCheck(config);
+  const backpressure = createBackpressure();
+  const checkLiveServer = createLiveServerCheck(config, { fetchImpl: backpressure.fetch });
   const syncWithRepair = async ({ reconcileState = false, domains = [], manual = false } = {}) => {
+    backpressure.check();
     const trace = debugEnabled(config) ? (event) => console.log(JSON.stringify(event)) : null;
     await checkLiveServer();
     try {
-      return await syncOnce(runtimeConfig, { reconcileState, domains, manual, trace });
+      return await syncOnce(runtimeConfig, { reconcileState, domains, manual, trace, fetchImpl: backpressure.fetch });
     } catch (error) {
       if (!String(error?.message || "").includes("invalid_device_token")) {
         throw error;
@@ -328,7 +331,7 @@ async function main() {
       if (manual) throw error;
       clearCredentials(config.credentialsPath);
       await pairRuntime();
-      return syncOnce(runtimeConfig, { reconcileState, domains, manual, trace });
+      return syncOnce(runtimeConfig, { reconcileState, domains, manual, trace, fetchImpl: backpressure.fetch });
     }
   };
 
@@ -351,7 +354,7 @@ async function main() {
       if (shouldReconcile) lastStateReconcileAt = Date.now();
       if (result.transientUploadFailure || result.questSyncFailed || result.lootSync === "failed") {
         consecutiveFailures += 1;
-        retryAt = Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(consecutiveFailures - 1, 5));
+        retryAt = Date.now() + Math.max(backpressure.remainingMs(), Math.min(60_000, 2_000 * 2 ** Math.min(consecutiveFailures - 1, 5)) + Math.floor(Math.random() * 2000));
       } else {
         consecutiveFailures = 0;
         retryAt = 0;
@@ -370,7 +373,7 @@ async function main() {
     } catch (error) {
       if (shouldReconcile) reconcileRequested = true;
       consecutiveFailures += 1;
-      retryAt = Date.now() + Math.min(60_000, 2_000 * 2 ** Math.min(consecutiveFailures - 1, 5));
+      retryAt = Date.now() + Math.max(backpressure.remainingMs(), Math.min(60_000, 2_000 * 2 ** Math.min(consecutiveFailures - 1, 5)) + Math.floor(Math.random() * 2000));
       console.error(`Guildweaver Bridge: ${error.message}`);
 
       if (command === "once") {
@@ -488,6 +491,7 @@ async function main() {
         if (operation === "sync") {
           normalizeDomains(args);
           const result = await syncWithRepair({ domains: args, manual: true });
+          result.retryAfterSeconds = Math.ceil(backpressure.remainingMs() / 1000);
           console.log("Manual synchronization complete: " + JSON.stringify(result));
           return result;
         }
