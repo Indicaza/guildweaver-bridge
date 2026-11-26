@@ -194,7 +194,7 @@ async function main() {
     if (addonMessage) console.log(addonMessage);
     const installed = platformBackground.installBackground(config);
     const binDirectory = installCli(config);
-    console.log(`Guildweaver CLI installed in ${binDirectory}; add that directory to PATH to use gw.`);
+    console.log(process.platform === "win32" ? "Guildweaver CLI registered in your user PATH. Open a new terminal to use gw." : `Guildweaver CLI installed in ${binDirectory}; add that directory to PATH to use gw.`);
     console.log(`Guildweaver is connected as Holdfast member ${credentials.memberId || "unknown"}.`);
     console.log("Guildweaver addon is installed and automatic updates are enabled.");
     console.log("Background sync installed and started. It will launch automatically when you sign in.");
