@@ -6,7 +6,7 @@ import test, { mock } from "node:test";
 
 import { LOOT_LIMITS, lootContentDigest, lootInboxSource, normalizeLootSnapshot } from "../src/lootSync.js";
 import { parseSavedVariables } from "../src/savedVariables.js";
-import { syncOnce } from "../src/sync.js";
+import { fixtureSyncOnce as syncOnce } from "../testSupport/telemetryReceipt.js";
 
 // The loot inbox: character wishlists and the valuable-BoE watchlist, with
 // their own schedule, digest and file. Nothing here may disturb quest sync
