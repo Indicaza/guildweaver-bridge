@@ -1,8 +1,17 @@
 import fs from "node:fs";
+import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { gold, muted, red, warn, green } from "./output.js";
 
 const MAX_READ = 1024 * 1024;
+const debugPath = (config) => path.join(config.dataDirectory, "debug.json");
+export function debugEnabled(config) {
+  try { return JSON.parse(fs.readFileSync(debugPath(config), "utf8")).enabled === true; } catch { return false; }
+}
+export function setDebug(config, enabled) {
+  fs.mkdirSync(config.dataDirectory, { recursive: true });
+  fs.writeFileSync(debugPath(config), JSON.stringify({ enabled }), { mode: 0o600 });
+}
 export function logDomain(message) {
   const text = String(message).toLowerCase();
   if (/auction|\bah\b|market/.test(text)) return "ah";
@@ -31,6 +40,10 @@ export function parseLog(line) {
   } catch {}
   const match = line.match(/^\[([^\]]+)\]\s+(INFO|ERROR|WARN|DEBUG|TRACE)\s+(.*)$/);
   if (!match) return { time: "", level: "INFO", domain: logDomain(line), message: redact(line) };
+  try {
+    const event = JSON.parse(match[3]);
+    if (typeof event.traceId === "string" && typeof event.message === "string") return { ...event, time: match[1], domain: logDomain(event.domain), eventType: event.domain, message: redact(event.message) };
+  } catch {}
   return { time: match[1], level: match[2], domain: logDomain(match[3]), message: redact(match[3]) };
 }
 function readRange(file, offset, size) {
@@ -40,17 +53,18 @@ function readRange(file, offset, size) {
     return bytes.subarray(0, fs.readSync(fd, bytes, 0, bytes.length, offset)).toString("utf8");
   } finally { fs.closeSync(fd); }
 }
-export async function showLogs(config, { domain, level, follow, json, count = 50 } = {}) {
+export async function showLogs(config, { domain, level, follow, json, traceId, count = 50 } = {}) {
   if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error("--lines must be 1–1000");
   const display = (line) => {
     if (!line) return;
     const event = parseLog(line);
-    if (domain && domain !== "all" && domain !== event.domain) return;
+    if (traceId && event.traceId !== traceId) return;
+    if (domain && domain !== "all" && domain !== event.domain && domain !== event.eventType) return;
     if (level && event.level.toLowerCase() !== level.toLowerCase()) return;
     if (json) console.log(JSON.stringify(event));
     else {
       const style = event.level === "ERROR" ? red : event.level === "WARN" ? warn : green;
-      console.log(muted(event.time.slice(11, 19)) + " " + style(event.level.padEnd(5)) + " " + gold(event.domain.toUpperCase().padEnd(12)) + " " + event.message);
+      console.log(muted(event.time.slice(11, 19)) + " " + style(event.level.padEnd(5)) + " " + gold(event.domain.toUpperCase().padEnd(12)) + " " + event.message + (event.traceId ? " · " + muted(event.traceId) : ""));
     }
   };
   let offset = 0;
