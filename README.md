@@ -381,3 +381,11 @@ gw archive verify-all --dir "D:\GuildweaverData\archive\transfer-01"
 ```
 
 The transfer includes current summaries and every retained hourly, daily, weekly and monthly series row for every advertised market, including non-final months. It writes bounded SHA-256-verified gzip batches and a local transfer plan. Repeat the same pull-all command after interruption; a changed hold or market list requires a different destination. The hold must stay active until the final server status check and local verification succeed. A final verified.json receipt binds the plan to the verified page chains. This is not authorization to delete production data: raw observations, ladders, provider records and non-market state are not included. A separate restore-tested database backup is required before destructive cleanup.
+
+Bulk transfers can be requested explicitly after the website advertises bulk protocol 1:
+
+```powershell
+gw archive pull-all --mode bulk --dir "D:\GuildweaverData\archive\transfer-01"
+```
+
+Stop the previous transfer before resuming. Use the same directory and hold. Existing pages and checksums remain valid; the new bridge accepts mixed page sizes. The website keeps the same single-worker queue, timeouts, rate limits and aggregate queued-result reservation budget. Bulk pages are bounded to 4,000 rows and 1 MiB serialized result. If production load increases, stop and resume with `--mode safe` (or omit mode). This is a throughput optimization, not a complete database backup.
