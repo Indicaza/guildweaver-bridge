@@ -34,7 +34,7 @@ export function redact(message) {
 }
 function classifiedLevel(level, message) {
   if (level !== "INFO") return level;
-  if (/\b(?:HTTP 5\d\d|remains queued:|will retry:|sync failed:|rejected \(HTTP|could not write)\b/i.test(message)) return "ERROR";
+  if (/\bHTTP 5\d\d\b|remains queued:|will retry:|sync failed:|rejected \(HTTP|could not write/i.test(message)) return "ERROR";
   if (/Skipping Guildweaver SavedVariables|Ignored an invalid|Ignored a stale|ingestion paused/i.test(message)) return "WARN";
   return level;
 }
