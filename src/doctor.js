@@ -24,14 +24,15 @@ export async function diagnose(config, { fetchImpl = fetch, request = requestAge
   const credentials = readCredentials(config.credentialsPath);
   add("Background bridge", bridge.running ? "pass" : "warn", bridge.running ? "Running" : "Not running");
   add("Pairing", credentials ? "pass" : "warn", credentials ? "Local credentials present (not a server authentication check)" : "Not paired; run gw pair");
+  const installed = runtime()?.release;
   if (bridge.running) {
     try {
       const agent = await request(config, "ping", []);
       add("Local command agent", agent?.ready === true ? "pass" : "warn", agent?.ready === true ? "Responding" : "Unexpected reply");
+      if (installed?.commit && /^[a-f0-9]{40}$/i.test(agent?.commit || "")) add("CLI version alignment", installed.commit === agent.commit ? "pass" : "warn", installed.commit === agent.commit ? "Matches running bridge" : "CLI is older or different from running bridge; run gw install-cli");
     } catch { add("Local command agent", "warn", "Not responding; restart the updated bridge"); }
   }
-  const installed = runtime()?.release;
-  add("Bridge build", "info", releaseLabel(installed?.releaseVersion) || "Source checkout or no package manifest");
+  add("CLI build", "info", releaseLabel(installed?.releaseVersion) || "Source checkout or no package manifest");
   try {
     const addon = findAddonPath(config);
     const exists = fs.existsSync(path.join(addon, "Guildweaver.toc"));
