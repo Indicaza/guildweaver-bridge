@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { packagedRuntime } from "../packageUpdater.js";
 import { randomUUID } from "node:crypto";
+import { registerWindowsCliPath } from "./windowsPath.js";
 
 export function prepareWindowsCliRuntime(directory, runtime) {
   const commit = runtime.release?.commit;
@@ -69,5 +70,6 @@ export function installCli(config) {
     : "#!/bin/sh\nexec " + quote(node) + " " + quote(entry) + ' "$@"' + configArgs + "\n";
   if (!fs.existsSync(target) || fs.readFileSync(target, "utf8") !== source) fs.writeFileSync(target, source, { mode: 0o755 });
   if (!windows) fs.chmodSync(target, 0o755);
+  else registerWindowsCliPath(directory);
   return directory;
 }

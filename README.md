@@ -337,7 +337,7 @@ The status command lists authorization, available dataset names and market keys.
 
 ## Guildweaver command center
 
-Source checkout: `npm link` registers `gw` using the package bin entry. The packaged installer writes a launcher into the application's per-user data directory under `bin`; add that directory to your PATH once if necessary. Existing installed bridges can run `node src/gw.js install-cli` with their installed runtime. No shell profile or system PATH is changed automatically.
+Source checkout: `npm link` registers `gw` using the package bin entry. The packaged installer writes a launcher into the application's per-user data directory under `bin`. On Windows it registers that directory in the persistent user PATH automatically, preserving existing entries; reopen your terminal application (or sign out and in if it still inherits a stale environment). Background startup also repairs missing PATH registration. On macOS and Linux, add the bin directory to your PATH if needed. Existing installed bridges can run `node src/gw.js install-cli` with their installed runtime. No shell profile or machine-wide PATH is changed.
 
 ```sh
 gw
